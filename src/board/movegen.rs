@@ -364,33 +364,24 @@ impl Board {
 			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Captures, buf);
 		}
 
-		// BISHOPS
-		let mut bishops = self.pieces[C as usize][Piece::Bishop as usize];
-		while bishops != 0 {
-			let from = bishops.trailing_zeros() as u8;
-			clear_lsb(&mut bishops);
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
 			let bishop_targets = get_sliding_attacks::<true>(from, self.occupied) & targets;
 			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Captures, buf);
 		}
 
-		// ROOKS
-		let mut rooks = self.pieces[C as usize][Piece::Rook as usize];
-		while rooks != 0 {
-			let from = rooks.trailing_zeros() as u8;
-			clear_lsb(&mut rooks);
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
 			let rook_targets = get_sliding_attacks::<false>(from, self.occupied) & targets;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Captures, buf);
-		}
-
-		// QUEENS
-		let mut queens = self.pieces[C as usize][Piece::Queen as usize];
-		while queens != 0 {
-			let from = queens.trailing_zeros() as u8;
-			clear_lsb(&mut queens);
-			let queen_targets = (get_sliding_attacks::<true>(from, self.occupied)
-				| get_sliding_attacks::<false>(from, self.occupied))
-				& targets;
-			Self::serialize_with_to_bb(from, queen_targets, MoveFlag::Captures, buf);
 		}
 
 		// KING
@@ -465,33 +456,24 @@ impl Board {
 			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Quiet, buf);
 		}
 
-		// BISHOPS
-		let mut bishops = self.pieces[C as usize][Piece::Bishop as usize];
-		while bishops != 0 {
-			let from = bishops.trailing_zeros() as u8;
-			clear_lsb(&mut bishops);
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
 			let bishop_targets = get_sliding_attacks::<true>(from, self.occupied) & self.empty;
 			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Quiet, buf);
 		}
 
-		// ROOKS
-		let mut rooks = self.pieces[C as usize][Piece::Rook as usize];
-		while rooks != 0 {
-			let from = rooks.trailing_zeros() as u8;
-			clear_lsb(&mut rooks);
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
 			let rook_targets = get_sliding_attacks::<false>(from, self.occupied) & self.empty;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
-		}
-
-		// QUEENS
-		let mut queens = self.pieces[C as usize][Piece::Queen as usize];
-		while queens != 0 {
-			let from = queens.trailing_zeros() as u8;
-			clear_lsb(&mut queens);
-			let queen_targets = (get_sliding_attacks::<true>(from, self.occupied)
-				| get_sliding_attacks::<false>(from, self.occupied))
-				& self.empty;
-			Self::serialize_with_to_bb(from, queen_targets, MoveFlag::Quiet, buf);
 		}
 
 		// KING
@@ -574,7 +556,6 @@ impl Board {
 		}
 	}
 
-	// ToDo: Merging both functions above
 	pub fn gen_all_pseudo_legal_moves<const C: u8>(&self, buf: &mut MoveList) {
 		let targets = self.get_opponent_bb::<C>();
 
@@ -706,12 +687,12 @@ impl Board {
 			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Quiet, buf);
 		}
 
-		// ToDo: It turns out we can merge queens and bishops/rooks since the piece type doesn't matter (Do the same in functions above)
-		// BISHOPS
-		let mut bishops = self.pieces[C as usize][Piece::Bishop as usize];
-		while bishops != 0 {
-			let from = bishops.trailing_zeros() as u8;
-			clear_lsb(&mut bishops);
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
 			let bishop_attacks = get_sliding_attacks::<true>(from, self.occupied);
 			let bishop_attack_targets = bishop_attacks & targets;
 			let bishop_targets = bishop_attacks & self.empty;
@@ -719,29 +700,17 @@ impl Board {
 			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Quiet, buf);
 		}
 
-		// ROOKS
-		let mut rooks = self.pieces[C as usize][Piece::Rook as usize];
-		while rooks != 0 {
-			let from = rooks.trailing_zeros() as u8;
-			clear_lsb(&mut rooks);
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
 			let rook_attacks = get_sliding_attacks::<false>(from, self.occupied);
 			let rook_attack_targets = rook_attacks & targets;
 			let rook_targets = rook_attacks & self.empty;
 			Self::serialize_with_to_bb(from, rook_attack_targets, MoveFlag::Captures, buf);
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
-		}
-
-		// QUEENS
-		let mut queens = self.pieces[C as usize][Piece::Queen as usize];
-		while queens != 0 {
-			let from = queens.trailing_zeros() as u8;
-			clear_lsb(&mut queens);
-			let queen_attacks = get_sliding_attacks::<true>(from, self.occupied)
-				| get_sliding_attacks::<false>(from, self.occupied);
-			let queen_attack_targets = queen_attacks & targets;
-			let queen_targets = queen_attacks & self.empty;
-			Self::serialize_with_to_bb(from, queen_attack_targets, MoveFlag::Captures, buf);
-			Self::serialize_with_to_bb(from, queen_targets, MoveFlag::Quiet, buf);
 		}
 
 		// KING
@@ -828,7 +797,6 @@ impl Board {
 	}
 
 	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8>(&self, buf: &mut MoveList) {
-		// ToDo
 		match S {
 			move_gen_stages::CAPTURES => self.gen_pseudo_legal_captures::<C>(buf),
 			move_gen_stages::QUIETS => self.gen_pseudo_legal_quiets::<C>(buf),
