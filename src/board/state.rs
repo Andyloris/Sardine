@@ -8,6 +8,8 @@ impl Board {
 	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<()> {
 		let (from, to, flags) = m.unpack();
 		let mut should_reset_enpassant = true;
+		self.halfmove_clock += 1;
+
 		match flags {
 			MoveFlag::Quiet => {
 				let from_mask = 1u64 << from;
@@ -42,6 +44,10 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				if piece == Piece::Pawn {
+					self.halfmove_clock = 0;
+				}
 			}
 
 			MoveFlag::DoublePush => {
@@ -60,6 +66,7 @@ impl Board {
 
 				self.en_passant = Some(to.wrapping_add_signed(en_passant_off));
 				should_reset_enpassant = false;
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::KCastle => {
@@ -160,6 +167,8 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::EpCaptures => {
@@ -179,6 +188,8 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= victim_mask;
 				self.empty ^= from_to ^ victim_mask;
 				self.occupied ^= from_to ^ victim_mask;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -191,6 +202,8 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -203,7 +216,10 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				self.halfmove_clock = 0;
 			}
+
 			MoveFlag::RookPromotion => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
@@ -214,6 +230,8 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -226,6 +244,8 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::KnightPromoCapture => {
@@ -261,6 +281,8 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::BishopPromoCapture => {
@@ -296,6 +318,8 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
+
+				self.halfmove_clock = 0;
 			}
 
 			MoveFlag::RookPromoCapture => {
@@ -331,7 +355,10 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
+
+				self.halfmove_clock = 0;
 			}
+
 			MoveFlag::QueenPromoCapture => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
@@ -365,6 +392,8 @@ impl Board {
 				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
+
+				self.halfmove_clock = 0;
 			}
 		};
 

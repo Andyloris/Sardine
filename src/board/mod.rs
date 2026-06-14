@@ -20,6 +20,7 @@ pub struct Board {
 	king_castle_flags: [bool; 2],
 	queen_castle_flags: [bool; 2],
 	turn: Color,
+	halfmove_clock: u8,
 }
 
 impl Board {
@@ -136,12 +137,15 @@ impl Board {
 			}
 		};
 
+		let halfmove_clock = parts[4].parse::<u8>().ok()?;
+
 		let mut board = Self {
 			pieces,
 			turn,
 			en_passant,
 			king_castle_flags,
 			queen_castle_flags,
+			halfmove_clock,
 			..Default::default()
 		};
 		board.gen_redundant_sets();

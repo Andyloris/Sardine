@@ -204,8 +204,8 @@ fn test_against_shakmaty(fen: &str, max_depth: usize) {
 		fen.into_position(shakmaty::CastlingMode::Standard).unwrap()
 	};
 	for d in 1..=max_depth {
-		let mut pv = vec![];
-		coupled_perft(&shakmaty_pos, &board, d, &mut pv);
+		//let mut pv = vec![];
+		//coupled_perft(&shakmaty_pos, &board, d, &mut pv);
 		println!("Searched nodes: {}", perft_driver(&board, d));
 		println!("Shakmaty nodes: {}\n", shakmaty_perft(&shakmaty_pos, d));
 	}
