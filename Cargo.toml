@@ -1,0 +1,11 @@
+[package]
+name = "final_sardine"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+pext_magics = []
+
+[dependencies]
+shakmaty = "0.30.0"
