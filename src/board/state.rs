@@ -1,7 +1,10 @@
+use std::num::NonZero;
+
 use crate::board::{
 	Board,
 	movegen::{Move, MoveFlag},
-	utils::{BLACK, Color, Piece, Squares, WHITE, direction},
+	utils::{BLACK, Color, Piece, PieceColorPair, Squares, WHITE, direction},
+	zobrist::ZobristDelta,
 };
 
 impl Board {
@@ -18,8 +21,15 @@ impl Board {
 				let piece = self.get_piece_at_square::<C>(from)?;
 
 				if piece == Piece::King {
-					self.king_castle_flags[C as usize] = false;
-					self.queen_castle_flags[C as usize] = false;
+					if self.king_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+						self.king_castle_flags[C as usize] = false;
+					}
+
+					if self.queen_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
+						self.queen_castle_flags[C as usize] = false;
+					}
 				}
 
 				if (piece == Piece::Rook)
@@ -29,14 +39,19 @@ impl Board {
 							BLACK => Squares::H8 as u8,
 							_ => 0,
 						}) {
-					self.king_castle_flags[C as usize] = false;
+					if self.king_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+						self.king_castle_flags[C as usize] = false;
+					}
 				} else if (piece == Piece::Rook)
 					&& (from
 						== match C {
 							WHITE => Squares::A1 as u8,
 							BLACK => Squares::A8 as u8,
 							_ => 0,
-						}) {
+						}) && self.queen_castle_flags[C as usize]
+				{
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
 					self.queen_castle_flags[C as usize] = false;
 				}
 
@@ -44,6 +59,15 @@ impl Board {
 				self.pieces_by_color[C as usize] ^= from_to;
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(piece, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(piece, Color::from(C)),
+					to,
+				));
 
 				if piece == Piece::Pawn {
 					self.halfmove_clock = 0;
@@ -64,7 +88,23 @@ impl Board {
 					_ => 0,
 				};
 
-				self.en_passant = Some(to.wrapping_add_signed(en_passant_off));
+				self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(
+					self.en_passant.map(|v| v.get()).unwrap_or(0),
+				));
+
+				let en_passant_sq = to.wrapping_add_signed(en_passant_off);
+				self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(en_passant_sq));
+
+				self.en_passant = NonZero::new(en_passant_sq);
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					to,
+				));
 				should_reset_enpassant = false;
 				self.halfmove_clock = 0;
 			}
@@ -74,8 +114,11 @@ impl Board {
 				let king_to_mask = 1u64 << to;
 				let king_from_to = king_from_mask | king_to_mask;
 
-				let rook_from_mask = 1u64 << to.wrapping_add_signed(direction::E);
-				let rook_to_mask = 1u64 << to.wrapping_add_signed(direction::W);
+				let rook_from = to.wrapping_add_signed(direction::E);
+				let rook_to = to.wrapping_add_signed(direction::W);
+
+				let rook_from_mask = 1u64 << rook_from;
+				let rook_to_mask = 1u64 << rook_to;
 				let rook_from_to = rook_from_mask | rook_to_mask;
 
 				let from_to = king_from_to | rook_from_to;
@@ -86,8 +129,33 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.queen_castle_flags[C as usize] = false;
-				self.king_castle_flags[C as usize] = false;
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::King, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::King, Color::from(C)),
+					to,
+				));
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					rook_from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					rook_to,
+				));
+
+				if self.king_castle_flags[C as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+					self.king_castle_flags[C as usize] = false;
+				}
+
+				if self.queen_castle_flags[C as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
+					self.queen_castle_flags[C as usize] = false;
+				}
 			}
 
 			MoveFlag::QCastle => {
@@ -95,8 +163,11 @@ impl Board {
 				let king_to_mask = 1u64 << to;
 				let king_from_to = king_from_mask | king_to_mask;
 
-				let rook_from_mask = 1u64 << to.wrapping_add_signed(direction::WW);
-				let rook_to_mask = 1u64 << to.wrapping_add_signed(direction::E);
+				let rook_from = to.wrapping_add_signed(direction::WW);
+				let rook_to = to.wrapping_add_signed(direction::E);
+
+				let rook_from_mask = 1u64 << rook_from;
+				let rook_to_mask = 1u64 << rook_to;
 				let rook_from_to = rook_from_mask | rook_to_mask;
 
 				let from_to = king_from_to | rook_from_to;
@@ -107,8 +178,33 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.queen_castle_flags[C as usize] = false;
-				self.king_castle_flags[C as usize] = false;
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::King, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::King, Color::from(C)),
+					to,
+				));
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					rook_from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					rook_to,
+				));
+
+				if self.king_castle_flags[C as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+					self.king_castle_flags[C as usize] = false;
+				}
+
+				if self.queen_castle_flags[C as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
+					self.queen_castle_flags[C as usize] = false;
+				}
 			}
 
 			MoveFlag::Captures => {
@@ -123,41 +219,55 @@ impl Board {
 				};
 
 				if piece == Piece::King {
-					self.king_castle_flags[C as usize] = false;
-					self.queen_castle_flags[C as usize] = false;
-				}
+					if self.king_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+						self.king_castle_flags[C as usize] = false;
+					}
 
-				if (piece == Piece::Rook)
+					if self.queen_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
+						self.queen_castle_flags[C as usize] = false;
+					}
+				} else if piece == Piece::Rook
 					&& (from
 						== match C {
 							WHITE => Squares::H1 as u8,
 							BLACK => Squares::H8 as u8,
 							_ => 0,
 						}) {
-					self.king_castle_flags[C as usize] = false;
+					if self.king_castle_flags[C as usize] {
+						self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
+						self.king_castle_flags[C as usize] = false;
+					}
 				} else if (piece == Piece::Rook)
 					&& (from
 						== match C {
 							WHITE => Squares::A1 as u8,
 							BLACK => Squares::A8 as u8,
 							_ => 0,
-						}) {
+						}) && self.queen_castle_flags[C as usize]
+				{
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::from(C)));
 					self.queen_castle_flags[C as usize] = false;
 				}
 
-				if to == Squares::A1 as u8 {
+				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::A8 as u8 {
+				if to == Squares::A8 as u8 && self.queen_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 					self.queen_castle_flags[BLACK as usize] = false;
 				}
 
-				if to == Squares::H1 as u8 {
+				if to == Squares::H1 as u8 && self.king_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 					self.king_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::H8 as u8 {
+				if to == Squares::H8 as u8 && self.king_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 					self.king_castle_flags[BLACK as usize] = false;
 				}
 
@@ -169,6 +279,20 @@ impl Board {
 				self.occupied ^= from_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(piece, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(piece, Color::from(C)),
+					to,
+				));
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(victim, Color::from(C ^ 1)),
+					to,
+				));
 			}
 
 			MoveFlag::EpCaptures => {
@@ -190,6 +314,20 @@ impl Board {
 				self.occupied ^= from_to ^ victim_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					to,
+				));
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C ^ 1)),
+					to,
+				));
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -204,6 +342,15 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Knight, Color::from(C)),
+					to,
+				));
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -218,6 +365,15 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Bishop, Color::from(C)),
+					to,
+				));
 			}
 
 			MoveFlag::RookPromotion => {
@@ -232,6 +388,15 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					to,
+				));
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -246,6 +411,15 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Queen, Color::from(C)),
+					to,
+				));
 			}
 
 			MoveFlag::KnightPromoCapture => {
@@ -258,19 +432,23 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
-				if to == Squares::A1 as u8 {
+				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::A8 as u8 {
+				if to == Squares::A8 as u8 && self.queen_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 					self.queen_castle_flags[BLACK as usize] = false;
 				}
 
-				if to == Squares::H1 as u8 {
+				if to == Squares::H1 as u8 && self.king_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 					self.king_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::H8 as u8 {
+				if to == Squares::H8 as u8 && self.king_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 					self.king_castle_flags[BLACK as usize] = false;
 				}
 
@@ -283,6 +461,19 @@ impl Board {
 				self.occupied ^= from_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Knight, Color::from(C)),
+					to,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(victim, Color::from(C ^ 1)),
+					to,
+				));
 			}
 
 			MoveFlag::BishopPromoCapture => {
@@ -294,20 +485,23 @@ impl Board {
 					BLACK => self.get_piece_at_square::<BLACK>(to)?,
 					_ => Piece::Pawn,
 				};
-
-				if to == Squares::A1 as u8 {
+				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::A8 as u8 {
+				if to == Squares::A8 as u8 && self.queen_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 					self.queen_castle_flags[BLACK as usize] = false;
 				}
 
-				if to == Squares::H1 as u8 {
+				if to == Squares::H1 as u8 && self.king_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 					self.king_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::H8 as u8 {
+				if to == Squares::H8 as u8 && self.king_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 					self.king_castle_flags[BLACK as usize] = false;
 				}
 
@@ -320,6 +514,19 @@ impl Board {
 				self.occupied ^= from_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Bishop, Color::from(C)),
+					to,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(victim, Color::from(C ^ 1)),
+					to,
+				));
 			}
 
 			MoveFlag::RookPromoCapture => {
@@ -332,19 +539,23 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
-				if to == Squares::A1 as u8 {
+				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::A8 as u8 {
+				if to == Squares::A8 as u8 && self.queen_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 					self.queen_castle_flags[BLACK as usize] = false;
 				}
 
-				if to == Squares::H1 as u8 {
+				if to == Squares::H1 as u8 && self.king_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 					self.king_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::H8 as u8 {
+				if to == Squares::H8 as u8 && self.king_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 					self.king_castle_flags[BLACK as usize] = false;
 				}
 
@@ -357,6 +568,19 @@ impl Board {
 				self.occupied ^= from_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Rook, Color::from(C)),
+					to,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(victim, Color::from(C ^ 1)),
+					to,
+				));
 			}
 
 			MoveFlag::QueenPromoCapture => {
@@ -369,19 +593,23 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
-				if to == Squares::A1 as u8 {
+				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::A8 as u8 {
+				if to == Squares::A8 as u8 && self.queen_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 					self.queen_castle_flags[BLACK as usize] = false;
 				}
 
-				if to == Squares::H1 as u8 {
+				if to == Squares::H1 as u8 && self.king_castle_flags[WHITE as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 					self.king_castle_flags[WHITE as usize] = false;
 				}
 
-				if to == Squares::H8 as u8 {
+				if to == Squares::H8 as u8 && self.king_castle_flags[BLACK as usize] {
+					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 					self.king_castle_flags[BLACK as usize] = false;
 				}
 
@@ -394,10 +622,26 @@ impl Board {
 				self.occupied ^= from_mask;
 
 				self.halfmove_clock = 0;
+
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Pawn, Color::from(C)),
+					from,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(Piece::Queen, Color::from(C)),
+					to,
+				));
+				self.apply_zobrist_delta(ZobristDelta::PutRemove(
+					PieceColorPair(victim, Color::from(C ^ 1)),
+					to,
+				));
 			}
 		};
 
-		if should_reset_enpassant {
+		if should_reset_enpassant && let Some(sq) = self.en_passant {
+			let sq = sq.get();
+			self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(sq));
+			self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(0));
 			self.en_passant = None;
 		}
 
@@ -405,6 +649,8 @@ impl Board {
 			Color::White => Color::Black,
 			Color::Black => Color::White,
 		};
+
+		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
 
 		Some(())
 	}

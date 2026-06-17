@@ -4,10 +4,14 @@ mod quiets;
 mod sliding_attack_table;
 mod state;
 pub mod utils;
+mod zobrist;
 
-use std::fmt::Display;
+use std::{fmt::Display, num::NonZero};
 
-use crate::board::utils::{Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square};
+use crate::board::{
+	utils::{Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square},
+	zobrist::ZobristDelta,
+};
 
 #[derive(Clone, Default)]
 pub struct Board {
@@ -16,11 +20,13 @@ pub struct Board {
 	empty: u64,
 	occupied: u64,
 
-	en_passant: Option<u8>,
+	en_passant: Option<NonZero<u8>>,
 	king_castle_flags: [bool; 2],
 	queen_castle_flags: [bool; 2],
 	turn: Color,
 	halfmove_clock: u8,
+
+	zobrist: u64,
 }
 
 impl Board {
@@ -66,6 +72,10 @@ impl Board {
 	}
 
 	pub fn from_fen(fen: &str) -> Option<Self> {
+		let mut board = Self {
+			..Default::default()
+		};
+
 		let mut pieces: [[u64; NUM_PIECES]; NUM_COLORS] = [[0; NUM_PIECES]; NUM_COLORS];
 
 		let parts = fen.split_whitespace().collect::<Vec<_>>();
@@ -89,8 +99,12 @@ impl Board {
 				}
 				_ => {
 					let PieceColorPair(piece, color) = PieceColorPair::try_from(c).ok()?;
-					pieces[color as usize][piece as usize] |=
-						1u64 << Square::from_rank_file(rank, file).0;
+					let sq = Square::from_rank_file(rank, file).0;
+					pieces[color as usize][piece as usize] |= 1u64 << sq;
+					board.apply_zobrist_delta(ZobristDelta::PutRemove(
+						PieceColorPair(piece, color),
+						sq,
+					));
 					file += 1;
 				}
 			};
@@ -101,7 +115,10 @@ impl Board {
 		}
 
 		let turn = match parts[1] {
-			"w" => Color::White,
+			"w" => {
+				board.apply_zobrist_delta(ZobristDelta::WhiteTurn);
+				Color::White
+			}
 			"b" => Color::Black,
 			_ => return None,
 		};
@@ -112,42 +129,48 @@ impl Board {
 			match c {
 				'K' => {
 					king_castle_flags[0] = true;
+					board.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
 				}
 				'Q' => {
 					queen_castle_flags[0] = true;
+					board.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 				}
 				'k' => {
 					king_castle_flags[1] = true;
+					board.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
 				}
 				'q' => {
 					queen_castle_flags[1] = true;
+					board.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
 				}
 				_ => {}
 			}
 		}
 
-		let en_passant: Option<u8> = match parts[3] {
-			"-" => None,
+		let en_passant: Option<NonZero<u8>> = match parts[3] {
+			"-" => {
+				board.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(0));
+				None
+			}
 			_ => {
 				let mut chars = parts[3].chars();
 				let file = chars.next()?;
 				let rank = chars.next()?;
 				let Square(sq) = Square::from_rank_file_chars_ascii(rank, file);
-				Some(sq)
+
+				board.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(sq));
+				NonZero::new(sq)
 			}
 		};
 
 		let halfmove_clock = parts[4].parse::<u8>().ok()?;
 
-		let mut board = Self {
-			pieces,
-			turn,
-			en_passant,
-			king_castle_flags,
-			queen_castle_flags,
-			halfmove_clock,
-			..Default::default()
-		};
+		board.pieces = pieces;
+		board.turn = turn;
+		board.en_passant = en_passant;
+		board.king_castle_flags = king_castle_flags;
+		board.queen_castle_flags = queen_castle_flags;
+		board.halfmove_clock = halfmove_clock;
 		board.gen_redundant_sets();
 		Some(board)
 	}

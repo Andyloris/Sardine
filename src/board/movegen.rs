@@ -11,7 +11,6 @@ use crate::board::{
 		BLACK, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_2, RANK_7, Square, Squares,
 		WHITE, clear_lsb,
 		direction::{self, N, S},
-		pop_lsb,
 	},
 };
 
@@ -342,15 +341,15 @@ impl Board {
 
 		if let Some(en_passant) = self.en_passant {
 			let mut en_passant_pawns = match C ^ 1 {
-				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant),
-				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant),
+				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
+				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
 				_ => 0,
 			} & friendly_pawns;
 
 			while en_passant_pawns != 0 {
 				let from = en_passant_pawns.trailing_zeros() as u8;
 				clear_lsb(&mut en_passant_pawns);
-				let m = Move::new(from, en_passant, MoveFlag::EpCaptures);
+				let m = Move::new(from, en_passant.get(), MoveFlag::EpCaptures);
 				buf.push(m);
 			}
 		}
@@ -637,15 +636,15 @@ impl Board {
 
 		if let Some(en_passant) = self.en_passant {
 			let mut en_passant_pawns = match C ^ 1 {
-				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant),
-				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant),
+				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
+				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
 				_ => 0,
 			} & friendly_pawns;
 
 			while en_passant_pawns != 0 {
 				let from = en_passant_pawns.trailing_zeros() as u8;
 				clear_lsb(&mut en_passant_pawns);
-				let m = Move::new(from, en_passant, MoveFlag::EpCaptures);
+				let m = Move::new(from, en_passant.get(), MoveFlag::EpCaptures);
 				buf.push(m);
 			}
 		}
