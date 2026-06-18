@@ -24,7 +24,7 @@ pub struct Board {
 	king_castle_flags: [bool; 2],
 	queen_castle_flags: [bool; 2],
 	turn: Color,
-	halfmove_clock: u8,
+	halfmove_clock: usize,
 
 	zobrist: u64,
 }
@@ -163,7 +163,7 @@ impl Board {
 			}
 		};
 
-		let halfmove_clock = parts[4].parse::<u8>().ok()?;
+		let halfmove_clock = parts[4].parse::<usize>().ok()?;
 
 		board.pieces = pieces;
 		board.turn = turn;

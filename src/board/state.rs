@@ -7,11 +7,29 @@ use crate::board::{
 	zobrist::ZobristDelta,
 };
 
+pub struct UndoInfo {
+	victim: Option<Piece>,
+	en_passant: Option<NonZero<u8>>,
+	halfmove_clock: usize,
+	zobrist: u64,
+	king_castle_flags: [bool; 2],
+	queen_castle_flags: [bool; 2],
+}
+
 impl Board {
-	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<()> {
+	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<UndoInfo> {
 		let (from, to, flags) = m.unpack();
 		let mut should_reset_enpassant = true;
 		self.halfmove_clock += 1;
+
+		let mut undo_info = UndoInfo {
+			victim: None,
+			en_passant: self.en_passant,
+			halfmove_clock: self.halfmove_clock,
+			zobrist: self.zobrist,
+			king_castle_flags: self.king_castle_flags,
+			queen_castle_flags: self.queen_castle_flags,
+		};
 
 		match flags {
 			MoveFlag::Quiet => {
@@ -218,6 +236,8 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
+				undo_info.victim = Some(victim);
+
 				if piece == Piece::King {
 					if self.king_castle_flags[C as usize] {
 						self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
@@ -305,6 +325,8 @@ impl Board {
 					_ => 0,
 				});
 				let victim_mask = 1u64 << victim_square;
+
+				undo_info.victim = Some(Piece::Pawn);
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_to;
 				self.pieces_by_color[C as usize] ^= from_to;
@@ -432,6 +454,8 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
+				undo_info.victim = Some(victim);
+
 				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
 					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
@@ -485,6 +509,9 @@ impl Board {
 					BLACK => self.get_piece_at_square::<BLACK>(to)?,
 					_ => Piece::Pawn,
 				};
+
+				undo_info.victim = Some(victim);
+
 				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
 					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
@@ -539,6 +566,8 @@ impl Board {
 					_ => Piece::Pawn,
 				};
 
+				undo_info.victim = Some(victim);
+
 				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
 					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
 					self.queen_castle_flags[WHITE as usize] = false;
@@ -592,6 +621,8 @@ impl Board {
 					BLACK => self.get_piece_at_square::<BLACK>(to)?,
 					_ => Piece::Pawn,
 				};
+
+				undo_info.victim = Some(victim);
 
 				if to == Squares::A1 as u8 && self.queen_castle_flags[WHITE as usize] {
 					self.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
@@ -651,6 +682,234 @@ impl Board {
 		};
 
 		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
+
+		Some(undo_info)
+	}
+
+	pub fn undo_move<const C: u8>(&mut self, undo_info: UndoInfo, m: &Move) -> Option<()> {
+		// ToDo, threefold repetition detection too
+		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
+
+		self.turn = match self.turn {
+			Color::White => Color::Black,
+			Color::Black => Color::White,
+		};
+
+		self.en_passant = undo_info.en_passant;
+		self.halfmove_clock = undo_info.halfmove_clock;
+		self.zobrist = undo_info.zobrist;
+		self.king_castle_flags = undo_info.king_castle_flags;
+		self.queen_castle_flags = undo_info.queen_castle_flags;
+
+		let (from, to, flags) = m.unpack();
+		match flags {
+			MoveFlag::Quiet => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let piece = self.get_piece_at_square::<C>(to)?;
+
+				self.pieces[C as usize][piece as usize] ^= from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::DoublePush => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::KCastle => {
+				let king_from_mask = 1u64 << from;
+				let king_to_mask = 1u64 << to;
+				let king_from_to = king_from_mask | king_to_mask;
+
+				let rook_from = to.wrapping_add_signed(direction::E);
+				let rook_to = to.wrapping_add_signed(direction::W);
+
+				let rook_from_mask = 1u64 << rook_from;
+				let rook_to_mask = 1u64 << rook_to;
+				let rook_from_to = rook_from_mask | rook_to_mask;
+
+				let from_to = king_from_to | rook_from_to;
+
+				self.pieces[C as usize][Piece::King as usize] ^= king_from_to;
+				self.pieces[C as usize][Piece::Rook as usize] ^= rook_from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::QCastle => {
+				let king_from_mask = 1u64 << from;
+				let king_to_mask = 1u64 << to;
+				let king_from_to = king_from_mask | king_to_mask;
+
+				let rook_from = to.wrapping_add_signed(direction::WW);
+				let rook_to = to.wrapping_add_signed(direction::E);
+
+				let rook_from_mask = 1u64 << rook_from;
+				let rook_to_mask = 1u64 << rook_to;
+				let rook_from_to = rook_from_mask | rook_to_mask;
+
+				let from_to = king_from_to | rook_from_to;
+
+				self.pieces[C as usize][Piece::King as usize] ^= king_from_to;
+				self.pieces[C as usize][Piece::Rook as usize] ^= rook_from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::Captures => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let piece = self.get_piece_at_square::<C>(to)?;
+				let victim = undo_info.victim?;
+
+				self.pieces[C as usize][piece as usize] ^= from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.empty ^= from_mask;
+				self.occupied ^= from_mask;
+			}
+
+			MoveFlag::EpCaptures => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let victim_square = to.wrapping_add_signed(match C {
+					WHITE => direction::S,
+					BLACK => direction::N,
+					_ => 0,
+				});
+				let victim_mask = 1u64 << victim_square;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_to;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces[(C ^ 1) as usize][Piece::Pawn as usize] ^= victim_mask;
+				self.pieces_by_color[(C ^ 1) as usize] ^= victim_mask;
+				self.empty ^= from_to ^ victim_mask;
+				self.occupied ^= from_to ^ victim_mask;
+			}
+
+			MoveFlag::KnightPromotion => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Knight as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::BishopPromotion => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Bishop as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::RookPromotion => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Rook as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::QueenPromotion => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Queen as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.empty ^= from_to;
+				self.occupied ^= from_to;
+			}
+
+			MoveFlag::KnightPromoCapture => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let victim = undo_info.victim?;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Knight as usize] ^= to_mask;
+				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.empty ^= from_mask;
+				self.occupied ^= from_mask;
+			}
+
+			MoveFlag::BishopPromoCapture => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let victim = undo_info.victim?;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Bishop as usize] ^= to_mask;
+				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.empty ^= from_mask;
+				self.occupied ^= from_mask;
+			}
+
+			MoveFlag::RookPromoCapture => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let victim = undo_info.victim?;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Rook as usize] ^= to_mask;
+				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.empty ^= from_mask;
+				self.occupied ^= from_mask;
+			}
+
+			MoveFlag::QueenPromoCapture => {
+				let from_mask = 1u64 << from;
+				let to_mask = 1u64 << to;
+				let from_to = from_mask | to_mask;
+				let victim = undo_info.victim?;
+
+				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
+				self.pieces[C as usize][Piece::Queen as usize] ^= to_mask;
+				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[C as usize] ^= from_to;
+				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.empty ^= from_mask;
+				self.occupied ^= from_mask;
+			}
+		}
 
 		Some(())
 	}

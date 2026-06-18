@@ -8,7 +8,7 @@ use crate::board::{
 
 mod board;
 
-fn perft_driver(brd: &Board, d: usize) -> u64 {
+fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 	if d == 0 {
 		return 1;
 	}
@@ -22,20 +22,30 @@ fn perft_driver(brd: &Board, d: usize) -> u64 {
 
 	let mut nodes = 0;
 	for m in move_list.iter() {
-		let mut brd_cpy = brd.clone();
-		match brd.get_turn() {
-			Color::White => brd_cpy.do_move::<WHITE>(m),
-			Color::Black => brd_cpy.do_move::<BLACK>(m),
-		};
+		let undo_info = match brd.get_turn() {
+			Color::White => brd.do_move::<WHITE>(m),
+			Color::Black => brd.do_move::<BLACK>(m),
+		}
+		.unwrap();
 
-		if match brd_cpy.get_turn() {
-			Color::White => brd_cpy.is_in_check::<BLACK>(),
-			Color::Black => brd_cpy.is_in_check::<WHITE>(),
+		if match brd.get_turn() {
+			Color::White => brd.is_in_check::<BLACK>(),
+			Color::Black => brd.is_in_check::<WHITE>(),
 		} {
+			match brd.get_turn() {
+				Color::Black => brd.undo_move::<WHITE>(undo_info, m),
+				Color::White => brd.undo_move::<BLACK>(undo_info, m),
+			};
 			continue;
 		}
 
-		nodes += perft_driver(&brd_cpy, d - 1);
+		nodes += perft_driver(brd, d - 1);
+
+		match brd.get_turn() {
+			Color::Black => brd.undo_move::<WHITE>(undo_info, m),
+			Color::White => brd.undo_move::<BLACK>(undo_info, m),
+		}
+		.unwrap();
 	}
 	nodes
 }
@@ -198,7 +208,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 
 fn test_against_shakmaty(fen: &str, max_depth: usize) {
 	// Get perft numbers between me and shakmaty at each depth
-	let board = Board::from_fen(fen).expect("I failed to parse the FEN");
+	let mut board = Board::from_fen(fen).expect("I failed to parse the FEN");
 	let shakmaty_pos: Chess = {
 		let fen: Fen = fen.parse().unwrap();
 		fen.into_position(shakmaty::CastlingMode::Standard).unwrap()
@@ -206,7 +216,7 @@ fn test_against_shakmaty(fen: &str, max_depth: usize) {
 	for d in 1..=max_depth {
 		//let mut pv = vec![];
 		//coupled_perft(&shakmaty_pos, &board, d, &mut pv);
-		println!("Searched nodes: {}", perft_driver(&board, d));
+		println!("Searched nodes: {}", perft_driver(&mut board, d));
 		println!("Shakmaty nodes: {}\n", shakmaty_perft(&shakmaty_pos, d));
 	}
 }
