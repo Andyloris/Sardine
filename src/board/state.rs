@@ -682,12 +682,13 @@ impl Board {
 		};
 
 		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
+		self.hash_history.push(self.zobrist);
 
 		Some(undo_info)
 	}
 
 	pub fn undo_move<const C: u8>(&mut self, undo_info: UndoInfo, m: &Move) -> Option<()> {
-		// ToDo, threefold repetition detection too
+		self.hash_history.pop();
 		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
 
 		self.turn = match self.turn {

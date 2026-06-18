@@ -27,6 +27,7 @@ pub struct Board {
 	halfmove_clock: usize,
 
 	zobrist: u64,
+	hash_history: Vec<u64>,
 }
 
 impl Board {
@@ -171,7 +172,10 @@ impl Board {
 		board.king_castle_flags = king_castle_flags;
 		board.queen_castle_flags = queen_castle_flags;
 		board.halfmove_clock = halfmove_clock;
+		board.hash_history = Vec::with_capacity(256);
+		board.hash_history.push(board.zobrist);
 		board.gen_redundant_sets();
+
 		Some(board)
 	}
 
@@ -212,6 +216,24 @@ impl Board {
 			}
 		}
 		res
+	}
+
+	pub fn detect_threefold_repetition(&self) -> bool {
+		let mut num_repetitions = 0;
+		for h in self.hash_history.iter().rev().step_by(2) {
+			if *h == self.zobrist {
+				num_repetitions += 1;
+				if num_repetitions >= 3 {
+					return true;
+				}
+			}
+		}
+
+		false
+	}
+
+	pub fn fifty_moves_rule(&self) -> bool {
+		self.halfmove_clock >= 100
 	}
 }
 
