@@ -18,10 +18,6 @@ pub struct UndoInfo {
 
 impl Board {
 	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<UndoInfo> {
-		let (from, to, flags) = m.unpack();
-		let mut should_reset_enpassant = true;
-		self.halfmove_clock += 1;
-
 		let mut undo_info = UndoInfo {
 			victim: None,
 			en_passant: self.en_passant,
@@ -30,6 +26,11 @@ impl Board {
 			king_castle_flags: self.king_castle_flags,
 			queen_castle_flags: self.queen_castle_flags,
 		};
+
+		let (from, to, flags) = m.unpack();
+		let mut should_reset_enpassant = true;
+
+		self.halfmove_clock += 1;
 
 		match flags {
 			MoveFlag::Quiet => {
@@ -348,7 +349,7 @@ impl Board {
 
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
 					PieceColorPair(Piece::Pawn, Color::from(C ^ 1)),
-					to,
+					victim_square,
 				));
 			}
 
@@ -689,7 +690,6 @@ impl Board {
 
 	pub fn undo_move<const C: u8>(&mut self, undo_info: UndoInfo, m: &Move) -> Option<()> {
 		self.hash_history.pop();
-		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
 
 		self.turn = match self.turn {
 			Color::White => Color::Black,

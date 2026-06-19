@@ -43,6 +43,10 @@ impl Board {
 		self.pieces_by_color[(C ^ 1) as usize]
 	}
 
+	pub fn get_num_pieces<const C: u8>(&self, piece: Piece) -> usize {
+		self.pieces[C as usize][piece as usize].count_ones() as usize
+	}
+
 	pub const fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
 		let mask = 1u64 << sq;
 		if (self.pieces[C as usize][Piece::Pawn as usize] & mask) != 0 {

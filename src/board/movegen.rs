@@ -15,7 +15,7 @@ use crate::board::{
 };
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MoveFlag {
 	#[default]
 	Quiet = 0,
@@ -89,8 +89,15 @@ impl Move {
 
 impl Display for Move {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let (from, to, _) = self.unpack();
-		write!(f, "{}{}", Square(from), Square(to))
+		let (from, to, flags) = self.unpack();
+		let prom = match flags {
+			MoveFlag::KnightPromotion | MoveFlag::KnightPromoCapture => "n",
+			MoveFlag::BishopPromotion | MoveFlag::BishopPromoCapture => "b",
+			MoveFlag::RookPromotion | MoveFlag::RookPromoCapture => "r",
+			MoveFlag::QueenPromotion | MoveFlag::QueenPromoCapture => "q",
+			_ => "",
+		};
+		write!(f, "{}{}{}", Square(from), Square(to), prom)
 	}
 }
 

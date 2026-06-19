@@ -206,8 +206,8 @@ impl Square {
 
 	// May give nonsensical results if given nonsensical characters
 	pub fn from_rank_file_chars_ascii(rank: char, file: char) -> Self {
-		let rank = rank as u8 - 31;
-		let file = file as u8 - 61;
+		let rank = rank as u8 - 0x31;
+		let file = file as u8 - 0x61;
 		Square::from_rank_file(rank, file)
 	}
 

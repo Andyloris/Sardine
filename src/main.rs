@@ -1,12 +1,18 @@
 use shakmaty::{Chess, Position, fen::Fen};
 
-use crate::board::{
-	Board,
-	movegen::{Move, MoveFlag, MoveList, move_gen_stages},
-	utils::{BLACK, Bitboard, Color, Squares, WHITE},
+use crate::{
+	board::{
+		Board,
+		movegen::{Move, MoveFlag, MoveList, move_gen_stages},
+		utils::{BLACK, Bitboard, Color, Squares, WHITE},
+	},
+	uci::UCIInstance,
 };
 
 mod board;
+mod eval;
+mod search;
+mod uci;
 
 fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 	if d == 0 {
@@ -232,8 +238,11 @@ fn main() {
 	println!("{}", movebuf.len());*/
 	//	println!("Perft: {}", perft(&board, 2));
 	//perft(&board, 3);
-	test_against_shakmaty(
+	/*test_against_shakmaty(
 		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
 		6,
-	);
+	);*/
+
+	let mut uci = UCIInstance::new();
+	uci.run();
 }
