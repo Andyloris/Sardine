@@ -1,3 +1,5 @@
+mod move_ordering;
+
 use std::time::Instant;
 
 use crate::{
@@ -7,6 +9,7 @@ use crate::{
 		utils::{BLACK, Color, WHITE},
 	},
 	eval,
+	search::move_ordering::OrderedMoveList,
 };
 
 const TIMER_CHECK_INTERVAL: usize = 4096;
@@ -18,6 +21,7 @@ pub struct SearchCtx {
 	max_depth: usize,
 	check_counter: usize,
 	stop_search: bool,
+	nodes: u64,
 }
 
 impl SearchCtx {
@@ -29,10 +33,12 @@ impl SearchCtx {
 			max_depth,
 			check_counter: 0,
 			stop_search: false,
+			nodes: 0,
 		}
 	}
 
 	fn negamax(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<i32> {
+		self.nodes += 1;
 		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
 			return Some(0);
@@ -62,7 +68,6 @@ impl SearchCtx {
 		}
 
 		let mut move_list = MoveList::default();
-
 		match self.board.get_turn() {
 			Color::White => self
 				.board
@@ -72,9 +77,12 @@ impl SearchCtx {
 				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
 		};
 
+		let mut ordered_move_list = OrderedMoveList::from_move_list(&self.board, &mut move_list);
+
 		let mut best_value = -999999;
 		let mut num_legal_moves: usize = 0;
-		for m in move_list.iter() {
+		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
 				Color::White => self.board.do_move::<WHITE>(m),
 				Color::Black => self.board.do_move::<BLACK>(m),
@@ -131,6 +139,7 @@ impl SearchCtx {
 	}
 
 	fn bestmove(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
+		self.nodes += 1;
 		let mut move_list = MoveList::default();
 
 		match self.board.get_turn() {
@@ -142,9 +151,12 @@ impl SearchCtx {
 				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
 		};
 
+		let mut ordered_move_list = OrderedMoveList::from_move_list(&self.board, &mut move_list);
+
 		let mut best_value = -999999;
 		let mut best_move = Move::default();
-		for m in move_list.iter() {
+		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+			//for m in move_list.iter() {
 			self.check_counter += 1;
 
 			if !self.stop_search
@@ -195,8 +207,8 @@ impl SearchCtx {
 
 		if !self.stop_search {
 			println!(
-				"info depth {} score cp {} pv {}",
-				depth, best_value, best_move
+				"info depth {} score cp {} pv {} nodes {}",
+				depth, best_value, best_move, self.nodes
 			);
 		}
 

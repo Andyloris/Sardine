@@ -101,14 +101,14 @@ impl Display for Move {
 	}
 }
 
-const MOVE_LIST_SIZE: usize = 255;
+pub const MAX_MOVE_LIST_SIZE: usize = 255;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MoveList([Move; MOVE_LIST_SIZE], usize);
+pub struct MoveList([Move; MAX_MOVE_LIST_SIZE], usize);
 
 impl Default for MoveList {
 	fn default() -> Self {
-		Self([Move::default(); MOVE_LIST_SIZE], 0)
+		Self([Move::default(); MAX_MOVE_LIST_SIZE], 0)
 	}
 }
 
@@ -128,12 +128,12 @@ impl Index<usize> for MoveList {
 }
 
 impl MoveList {
-	pub fn push(&mut self, m: Move) {
+	pub const fn push(&mut self, m: Move) {
 		self.0[self.1] = m;
 		self.1 += 1;
 	}
 
-	pub fn clear(&mut self) {
+	pub const fn clear(&mut self) {
 		self.1 = 0;
 	}
 
@@ -141,7 +141,15 @@ impl MoveList {
 		self.0[0..self.1].iter()
 	}
 
-	pub fn len(&self) -> usize {
+	pub fn as_slice(&self) -> &[Move] {
+		&self.0[0..self.1]
+	}
+
+	pub fn as_mut_slice(&mut self) -> &mut [Move] {
+		&mut self.0[0..self.1]
+	}
+
+	pub const fn len(&self) -> usize {
 		self.1
 	}
 }
