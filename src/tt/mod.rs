@@ -16,9 +16,9 @@ impl Default for ScoreType {
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
 	pub hash: u64,
-	pub best_move: Move,
-	pub depth: usize,
 	pub score: ScoreType,
+	pub best_move: Move,
+	pub depth: i16,
 }
 
 pub struct TT {
@@ -34,7 +34,7 @@ impl TT {
 		}
 	}
 
-	pub fn add_entry(&mut self, board: &Board, best_move: Move, depth: usize, score: ScoreType) {
+	pub fn add_entry(&mut self, board: &Board, best_move: Move, depth: i16, score: ScoreType) {
 		let idx = board.get_hash() % (1 << self.size_exponent as u64);
 		self.table[idx as usize] = TTEntry {
 			hash: board.get_hash(),

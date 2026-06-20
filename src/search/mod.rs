@@ -20,14 +20,14 @@ pub struct SearchCtx<'a> {
 	board: Board,
 	search_start: Instant,
 	allocated_time_millis: u64,
-	max_depth: usize,
+	max_depth: u16,
 	check_counter: usize,
 	stop_search: bool,
 	nodes: u64,
 }
 
 impl<'a> SearchCtx<'a> {
-	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: usize) -> Self {
+	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: u16) -> Self {
 		Self {
 			tt,
 			board,
@@ -40,12 +40,7 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
-	fn quiescence_search(
-		&mut self,
-		ply_from_root: usize,
-		mut alpha: i32,
-		beta: i32,
-	) -> Option<i32> {
+	fn quiescence_search(&mut self, mut alpha: i32, beta: i32) -> Option<i32> {
 		self.check_counter += 1;
 
 		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
@@ -112,7 +107,7 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			let score = -self.quiescence_search(ply_from_root + 1, -beta, -alpha)?;
+			let score = -self.quiescence_search(-beta, -alpha)?;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
@@ -154,8 +149,8 @@ impl<'a> SearchCtx<'a> {
 
 	fn negamax(
 		&mut self,
-		depth: usize,
-		ply_from_root: usize,
+		depth: u16,
+		ply_from_root: u16,
 		mut alpha: i32,
 		beta: i32,
 	) -> Option<i32> {
@@ -168,7 +163,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if depth == 0 {
-			return self.quiescence_search(ply_from_root, alpha, beta);
+			return self.quiescence_search(alpha, beta);
 		}
 
 		if !self.stop_search
@@ -182,9 +177,11 @@ impl<'a> SearchCtx<'a> {
 			return None;
 		}
 
-		/*let entry = self.tt.probe(&self.board);
+		self.nodes += 1;
+
+		let entry = self.tt.probe(&self.board);
 		if let Some(entry) = entry {
-			if entry.depth >= depth {
+			if entry.depth >= depth as i16 {
 				match entry.score {
 					ScoreType::Exact(v) => return Some(v),
 					ScoreType::Lower(v) if v >= beta => return Some(v),
@@ -193,7 +190,7 @@ impl<'a> SearchCtx<'a> {
 				};
 			}
 		}
-		let hash_move = entry.map(|e| e.best_move);*/
+		let hash_move = entry.map(|e| e.best_move);
 
 		let mut move_list = MoveList::default();
 
@@ -207,7 +204,7 @@ impl<'a> SearchCtx<'a> {
 		};
 
 		let mut ordered_move_list =
-			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
+			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
 
 		let mut best_value = -999999;
 		let mut num_legal_moves: usize = 0;
@@ -268,7 +265,7 @@ impl<'a> SearchCtx<'a> {
 			return Some(0);
 		}
 
-		/*let tt_score = if best_value < alpha_orig {
+		let tt_score = if best_value < alpha_orig {
 			ScoreType::Upper(best_value)
 		} else if best_value >= beta {
 			ScoreType::Lower(best_value)
@@ -276,28 +273,45 @@ impl<'a> SearchCtx<'a> {
 			ScoreType::Exact(best_value)
 		};
 
-		self.tt.add_entry(&self.board, best_move, depth, tt_score);*/
+		self.tt
+			.add_entry(&self.board, best_move, depth as i16, tt_score);
 
 		Some(best_value)
 	}
 
-	fn bestmove(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
+	fn bestmove(&mut self, depth: u16, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
 		let alpha_orig = alpha;
-		self.nodes += 1;
 
-		/*let entry = self.tt.probe(&self.board);
+		let entry = self.tt.probe(&self.board);
 		if let Some(entry) = entry {
-			if entry.depth >= depth {
+			if entry.depth >= depth as i16 {
 				match entry.score {
-					ScoreType::Exact(v) => return Some((entry.best_move, v)),
-					ScoreType::Lower(v) if v >= beta => return Some((entry.best_move, v)),
-					ScoreType::Upper(v) if v <= alpha => return Some((entry.best_move, v)),
+					ScoreType::Exact(v) => {
+						println!(
+							"info depth {} score cp {} pv {} nodes {}",
+							depth, v, entry.best_move, self.nodes
+						);
+						return Some((entry.best_move, v));
+					}
+					ScoreType::Lower(v) if v >= beta => {
+						println!(
+							"info depth {} score cp {} pv {} nodes {}",
+							depth, v, entry.best_move, self.nodes
+						);
+						return Some((entry.best_move, v));
+					}
+					ScoreType::Upper(v) if v <= alpha => {
+						println!(
+							"info depth {} score cp {} pv {} nodes {}",
+							depth, v, entry.best_move, self.nodes
+						);
+						return Some((entry.best_move, v));
+					}
 					_ => {}
 				};
 			}
 		}
-		let hash_move = entry.map(|e| e.best_move);*/
-		let hash_move = None;
+		let hash_move = entry.map(|e| e.best_move);
 
 		let mut move_list = MoveList::default();
 
@@ -371,7 +385,7 @@ impl<'a> SearchCtx<'a> {
 				depth, best_value, best_move, self.nodes
 			);
 
-			/*let tt_score = if best_value < alpha_orig {
+			let tt_score = if best_value < alpha_orig {
 				ScoreType::Upper(best_value)
 			} else if best_value >= beta {
 				ScoreType::Lower(best_value)
@@ -379,7 +393,8 @@ impl<'a> SearchCtx<'a> {
 				ScoreType::Exact(best_value)
 			};
 
-			self.tt.add_entry(&self.board, best_move, depth, tt_score);*/
+			self.tt
+				.add_entry(&self.board, best_move, depth as i16, tt_score);
 		}
 
 		Some((best_move, best_value))
@@ -388,6 +403,7 @@ impl<'a> SearchCtx<'a> {
 	pub fn search(&mut self) -> (Move, i32) {
 		let mut best_info = (Move::default(), 0);
 		self.search_start = Instant::now();
+		self.nodes = 0;
 
 		for d in 1..=self.max_depth.max(1) {
 			let cur_best_info = self.bestmove(d, i32::MIN + 1, i32::MAX);

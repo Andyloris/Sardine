@@ -18,7 +18,7 @@ pub struct UCIInstance {
 impl UCIInstance {
 	pub fn new() -> Self {
 		Self {
-			tt: TT::new(22),
+			tt: TT::new(23),
 			position: Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
 		}
@@ -152,7 +152,7 @@ impl UCIInstance {
 	}
 
 	fn go(&mut self, params: &[&str]) {
-		let mut depth: i32 = 255;
+		let mut depth: u16 = 255;
 		let mut time: i32 = i32::MAX - 1;
 		let mut inc: i32 = i32::MAX - 1;
 		for chunk in params.chunks(2) {
@@ -162,7 +162,7 @@ impl UCIInstance {
 				};
 
 				match name {
-					"depth" if value > 0 => depth = value,
+					"depth" if value > 0 => depth = value as u16,
 					"wtime" if self.position.get_turn() == Color::White => time = value,
 					"winc" if self.position.get_turn() == Color::White => inc = value,
 					"btime" if self.position.get_turn() == Color::Black => time = value,
@@ -172,13 +172,7 @@ impl UCIInstance {
 			}
 		}
 
-		let mut search_ctx = SearchCtx::new(
-			&mut self.tt,
-			self.position.clone(),
-			time,
-			inc,
-			depth as usize,
-		);
+		let mut search_ctx = SearchCtx::new(&mut self.tt, self.position.clone(), time, inc, depth);
 		search_ctx.search();
 	}
 }
