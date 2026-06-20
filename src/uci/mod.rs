@@ -7,15 +7,18 @@ use crate::{
 		utils::{BLACK, Color, Square, WHITE},
 	},
 	search::SearchCtx,
+	tt::TT,
 };
 
 pub struct UCIInstance {
+	tt: TT,
 	position: Board,
 }
 
 impl UCIInstance {
 	pub fn new() -> Self {
 		Self {
+			tt: TT::new(22),
 			position: Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
 		}
@@ -169,7 +172,13 @@ impl UCIInstance {
 			}
 		}
 
-		let mut search_ctx = SearchCtx::new(self.position.clone(), time, inc, depth as usize);
+		let mut search_ctx = SearchCtx::new(
+			&mut self.tt,
+			self.position.clone(),
+			time,
+			inc,
+			depth as usize,
+		);
 		search_ctx.search();
 	}
 }

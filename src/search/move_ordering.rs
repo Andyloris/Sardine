@@ -44,7 +44,11 @@ pub struct OrderedMoveList<'a> {
 }
 
 impl<'a> OrderedMoveList<'a> {
-	pub fn from_move_list(board: &Board, move_list: &'a mut MoveList) -> OrderedMoveList<'a> {
+	pub fn from_move_list(
+		board: &Board,
+		move_list: &'a mut MoveList,
+		hash_move: Option<Move>,
+	) -> OrderedMoveList<'a> {
 		let mut res = Self {
 			moves: move_list.as_mut_slice(),
 			scores: [0; MAX_MOVE_LIST_SIZE],
@@ -53,16 +57,23 @@ impl<'a> OrderedMoveList<'a> {
 
 		for i in 0..res.moves.len() {
 			res.scores[i] = match board.get_turn() {
-				Color::White => Self::score_move::<WHITE>(board, &res.moves[i]),
-				Color::Black => Self::score_move::<BLACK>(board, &res.moves[i]),
+				Color::White => Self::score_move::<WHITE>(board, &res.moves[i], hash_move),
+				Color::Black => Self::score_move::<BLACK>(board, &res.moves[i], hash_move),
 			};
 		}
 
 		res
 	}
 
-	fn score_move<const C: u8>(board: &Board, m: &Move) -> i32 {
+	fn score_move<const C: u8>(board: &Board, m: &Move, hash_move: Option<Move>) -> i32 {
 		let (from, to, flags) = m.unpack();
+
+		if let Some(hash_move) = hash_move {
+			if hash_move == *m {
+				return i32::MAX - 1;
+			}
+		}
+
 		match flags {
 			MoveFlag::Captures
 			| MoveFlag::KnightPromoCapture

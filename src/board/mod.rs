@@ -47,6 +47,10 @@ impl Board {
 		self.pieces[C as usize][piece as usize].count_ones() as usize
 	}
 
+	pub const fn get_hash(&self) -> u64 {
+		self.zobrist
+	}
+
 	pub const fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
 		let mask = 1u64 << sq;
 		if (self.pieces[C as usize][Piece::Pawn as usize] & mask) != 0 {

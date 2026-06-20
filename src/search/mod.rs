@@ -10,11 +10,13 @@ use crate::{
 	},
 	eval,
 	search::move_ordering::OrderedMoveList,
+	tt::{ScoreType, TT},
 };
 
 const TIMER_CHECK_INTERVAL: usize = 4096;
 
-pub struct SearchCtx {
+pub struct SearchCtx<'a> {
+	tt: &'a mut TT,
 	board: Board,
 	search_start: Instant,
 	allocated_time_millis: u64,
@@ -24,9 +26,10 @@ pub struct SearchCtx {
 	nodes: u64,
 }
 
-impl SearchCtx {
-	pub fn new(board: Board, time: i32, inc: i32, max_depth: usize) -> Self {
+impl<'a> SearchCtx<'a> {
+	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: usize) -> Self {
 		Self {
+			tt,
 			board,
 			search_start: Instant::now(),
 			allocated_time_millis: (time / 20 + inc / 2) as u64,
@@ -37,24 +40,18 @@ impl SearchCtx {
 		}
 	}
 
-	fn negamax(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<i32> {
-		self.nodes += 1;
+	fn quiescence_search(
+		&mut self,
+		ply_from_root: usize,
+		mut alpha: i32,
+		beta: i32,
+	) -> Option<i32> {
+		self.check_counter += 1;
+
 		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
 			return Some(0);
 		}
-
-		if depth == 0 {
-			return Some(
-				eval::eval_board_objective(&self.board)
-					* match self.board.get_turn() {
-						Color::White => 1,
-						Color::Black => -1,
-					},
-			);
-		}
-
-		self.check_counter += 1;
 
 		if !self.stop_search
 			&& self.check_counter.is_multiple_of(TIMER_CHECK_INTERVAL)
@@ -67,20 +64,35 @@ impl SearchCtx {
 			return None;
 		}
 
+		self.nodes += 1;
+
+		let mut best_value = eval::eval_board_objective(&self.board)
+			* match self.board.get_turn() {
+				Color::White => 1,
+				Color::Black => -1,
+			};
+
+		if best_value >= beta {
+			return Some(best_value);
+		}
+
+		if best_value > alpha {
+			alpha = best_value;
+		}
+
 		let mut move_list = MoveList::default();
 		match self.board.get_turn() {
 			Color::White => self
 				.board
-				.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
+				.gen_pseudo_legal_captures::<WHITE>(&mut move_list),
 			Color::Black => self
 				.board
-				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
+				.gen_pseudo_legal_captures::<BLACK>(&mut move_list),
 		};
 
-		let mut ordered_move_list = OrderedMoveList::from_move_list(&self.board, &mut move_list);
+		let mut ordered_move_list =
+			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
 
-		let mut best_value = -999999;
-		let mut num_legal_moves: usize = 0;
 		while let Some(m) = ordered_move_list.pick_move(&self.board) {
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
@@ -100,9 +112,7 @@ impl SearchCtx {
 				continue;
 			}
 
-			num_legal_moves += 1;
-
-			let score = -self.negamax(depth - 1, -beta, -alpha)?;
+			let score = -self.quiescence_search(ply_from_root + 1, -beta, -alpha)?;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
@@ -124,22 +134,67 @@ impl SearchCtx {
 			}
 		}
 
+		// This doesn't work in QS since we generate pseudo legal captures only
+		/*
 		if num_legal_moves == 0 {
 			if match self.board.get_turn() {
 				Color::White => self.board.is_in_check::<WHITE>(),
 				Color::Black => self.board.is_in_check::<BLACK>(),
 			} {
-				return Some(-99999);
+				let mating_value = -99999 + ply_from_root as i32;
+				return Some(mating_value);
 			}
 
 			return Some(0);
 		}
+		*/
 
 		Some(best_value)
 	}
 
-	fn bestmove(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
-		self.nodes += 1;
+	fn negamax(
+		&mut self,
+		depth: usize,
+		ply_from_root: usize,
+		mut alpha: i32,
+		beta: i32,
+	) -> Option<i32> {
+		let alpha_orig = alpha;
+		self.check_counter += 1;
+
+		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
+			// Draw score
+			return Some(0);
+		}
+
+		if depth == 0 {
+			return self.quiescence_search(ply_from_root, alpha, beta);
+		}
+
+		if !self.stop_search
+			&& self.check_counter.is_multiple_of(TIMER_CHECK_INTERVAL)
+			&& self.search_start.elapsed().as_millis() as u64 >= self.allocated_time_millis
+		{
+			self.stop_search = true;
+		}
+
+		if self.stop_search {
+			return None;
+		}
+
+		/*let entry = self.tt.probe(&self.board);
+		if let Some(entry) = entry {
+			if entry.depth >= depth {
+				match entry.score {
+					ScoreType::Exact(v) => return Some(v),
+					ScoreType::Lower(v) if v >= beta => return Some(v),
+					ScoreType::Upper(v) if v <= alpha => return Some(v),
+					_ => {}
+				};
+			}
+		}
+		let hash_move = entry.map(|e| e.best_move);*/
+
 		let mut move_list = MoveList::default();
 
 		match self.board.get_turn() {
@@ -151,7 +206,112 @@ impl SearchCtx {
 				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
 		};
 
-		let mut ordered_move_list = OrderedMoveList::from_move_list(&self.board, &mut move_list);
+		let mut ordered_move_list =
+			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
+
+		let mut best_value = -999999;
+		let mut num_legal_moves: usize = 0;
+		let mut best_move = Move::default();
+		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+			//for m in move_list.iter() {
+			let undo_info = match self.board.get_turn() {
+				Color::White => self.board.do_move::<WHITE>(m),
+				Color::Black => self.board.do_move::<BLACK>(m),
+			}
+			.unwrap();
+
+			if match self.board.get_turn() {
+				Color::White => self.board.is_in_check::<BLACK>(),
+				Color::Black => self.board.is_in_check::<WHITE>(),
+			} {
+				match self.board.get_turn() {
+					Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
+					Color::White => self.board.undo_move::<BLACK>(undo_info, m),
+				};
+				continue;
+			}
+
+			num_legal_moves += 1;
+
+			let score = -self.negamax(depth - 1, ply_from_root + 1, -beta, -alpha)?;
+
+			match self.board.get_turn() {
+				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
+				Color::White => self.board.undo_move::<BLACK>(undo_info, m),
+			}
+			.unwrap();
+
+			// fail-soft
+			if score > best_value {
+				best_value = score;
+				best_move = *m;
+			}
+
+			if score >= alpha {
+				alpha = score;
+			}
+
+			if alpha >= beta {
+				break; // Beta-cutoff
+			}
+		}
+
+		if num_legal_moves == 0 {
+			if match self.board.get_turn() {
+				Color::White => self.board.is_in_check::<WHITE>(),
+				Color::Black => self.board.is_in_check::<BLACK>(),
+			} {
+				let mating_value = -99999 + ply_from_root as i32;
+				return Some(mating_value);
+			}
+
+			return Some(0);
+		}
+
+		/*let tt_score = if best_value < alpha_orig {
+			ScoreType::Upper(best_value)
+		} else if best_value >= beta {
+			ScoreType::Lower(best_value)
+		} else {
+			ScoreType::Exact(best_value)
+		};
+
+		self.tt.add_entry(&self.board, best_move, depth, tt_score);*/
+
+		Some(best_value)
+	}
+
+	fn bestmove(&mut self, depth: usize, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
+		let alpha_orig = alpha;
+		self.nodes += 1;
+
+		/*let entry = self.tt.probe(&self.board);
+		if let Some(entry) = entry {
+			if entry.depth >= depth {
+				match entry.score {
+					ScoreType::Exact(v) => return Some((entry.best_move, v)),
+					ScoreType::Lower(v) if v >= beta => return Some((entry.best_move, v)),
+					ScoreType::Upper(v) if v <= alpha => return Some((entry.best_move, v)),
+					_ => {}
+				};
+			}
+		}
+		let hash_move = entry.map(|e| e.best_move);*/
+		let hash_move = None;
+
+		let mut move_list = MoveList::default();
+
+		match self.board.get_turn() {
+			Color::White => self
+				.board
+				.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
+			Color::Black => self
+				.board
+				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
+		};
+
+		let mut ordered_move_list =
+			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
 
 		let mut best_value = -999999;
 		let mut best_move = Move::default();
@@ -187,7 +347,7 @@ impl SearchCtx {
 				continue;
 			}
 
-			let score = -self.negamax(depth - 1, -beta, -alpha)?;
+			let score = -self.negamax(depth - 1, 1, -beta, -alpha)?;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
@@ -210,6 +370,16 @@ impl SearchCtx {
 				"info depth {} score cp {} pv {} nodes {}",
 				depth, best_value, best_move, self.nodes
 			);
+
+			/*let tt_score = if best_value < alpha_orig {
+				ScoreType::Upper(best_value)
+			} else if best_value >= beta {
+				ScoreType::Lower(best_value)
+			} else {
+				ScoreType::Exact(best_value)
+			};
+
+			self.tt.add_entry(&self.board, best_move, depth, tt_score);*/
 		}
 
 		Some((best_move, best_value))
@@ -228,7 +398,6 @@ impl SearchCtx {
 		}
 
 		println!("bestmove {}", best_info.0);
-
 		best_info
 	}
 }
