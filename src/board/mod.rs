@@ -51,6 +51,10 @@ impl Board {
 		self.zobrist
 	}
 
+	pub fn get_bb(&self, PieceColorPair(piece, color): PieceColorPair) -> u64 {
+		self.pieces[color as usize][piece as usize]
+	}
+
 	pub const fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
 		let mask = 1u64 << sq;
 		if (self.pieces[C as usize][Piece::Pawn as usize] & mask) != 0 {
@@ -231,7 +235,7 @@ impl Board {
 		for h in self.hash_history.iter().rev().step_by(2) {
 			if *h == self.zobrist {
 				num_repetitions += 1;
-				if num_repetitions >= 3 {
+				if num_repetitions >= 2 {
 					return true;
 				}
 			}
