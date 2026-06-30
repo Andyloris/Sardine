@@ -6,11 +6,13 @@ use crate::board::{
 		get_king_attacks, get_knight_attacks, get_pawn_attacks, get_pawns_able_to_attack_east_bb,
 		get_pawns_able_to_attack_west_bb, get_sliding_attacks,
 	},
+	in_between::in_between_mask,
 	quiets::{get_pawns_able_to_double_push, get_pawns_able_to_push},
 	utils::{
-		BLACK, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_2, RANK_7, Square, Squares,
-		WHITE, clear_lsb,
+		BLACK, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_2, RANK_7, Square,
+		Squares, WHITE, clear_lsb,
 		direction::{self, N, S},
+		shift_bb,
 	},
 };
 
@@ -399,10 +401,9 @@ impl Board {
 		}
 
 		// KING
-		let mut kings = self.pieces[C as usize][Piece::King as usize];
-		while kings != 0 {
-			let from = kings.trailing_zeros() as u8;
-			clear_lsb(&mut kings);
+		let king = self.pieces[C as usize][Piece::King as usize];
+		{
+			let from = king.trailing_zeros() as u8;
 			let king_targets = get_king_attacks(from) & targets;
 			Self::serialize_with_to_bb(from, king_targets, MoveFlag::Captures, buf);
 		}
@@ -491,10 +492,9 @@ impl Board {
 		}
 
 		// KING
-		let mut kings = self.pieces[C as usize][Piece::King as usize];
-		while kings != 0 {
-			let from = kings.trailing_zeros() as u8;
-			clear_lsb(&mut kings);
+		let king = self.pieces[C as usize][Piece::King as usize];
+		{
+			let from = king.trailing_zeros() as u8;
 			let king_targets = get_king_attacks(from) & self.empty;
 			Self::serialize_with_to_bb(from, king_targets, MoveFlag::Quiet, buf);
 		}
@@ -728,10 +728,9 @@ impl Board {
 		}
 
 		// KING
-		let mut kings = self.pieces[C as usize][Piece::King as usize];
-		while kings != 0 {
-			let from = kings.trailing_zeros() as u8;
-			clear_lsb(&mut kings);
+		let king = self.pieces[C as usize][Piece::King as usize];
+		{
+			let from = king.trailing_zeros() as u8;
 			let king_attacks = get_king_attacks(from);
 			let king_attack_targets = king_attacks & targets;
 			let king_targets = king_attacks & self.empty;
@@ -810,12 +809,563 @@ impl Board {
 		}
 	}
 
+	pub fn gen_pseudo_legal_captures_in_check<const C: u8>(&self, buf: &mut MoveList) {
+		// When in check: generate all king moves, moves that capture the checker, and moves to the
+		// squares in between us and the checker
+		let targets = self.get_opponent_bb::<C>();
+		let king = self.pieces[C as usize][Piece::King as usize];
+		let king_sq = king.trailing_zeros() as u8;
+		let checkers_mask: u64;
+		{
+			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
+			let pawn_checker_mask = match C {
+				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
+				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
+				_ => 0,
+			};
+
+			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
+			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
+
+			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
+			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
+
+			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let bishops_queens_checker_mask =
+				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
+
+			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let rooks_queens_checker_mask =
+				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
+			checkers_mask = pawn_checker_mask
+				| knight_checker_mask
+				| king_checker_mask
+				| bishops_queens_checker_mask
+				| rooks_queens_checker_mask;
+		}
+
+		if checkers_mask == 0 {
+			self.gen_pseudo_legal_captures::<{ C }>(buf);
+			return;
+		}
+
+		let king_attacks = get_king_attacks(king_sq);
+		let king_attack_targets = king_attacks & targets;
+		Self::serialize_with_to_bb(king_sq, king_attack_targets, MoveFlag::Captures, buf);
+
+		// If in double check, stop at king moves
+		if checkers_mask.count_ones() >= 2 {
+			return;
+		}
+
+		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
+
+		let friendly_pawns = self.pieces[C as usize][Piece::Pawn as usize];
+		let promo_pawns = friendly_pawns
+			& match C {
+				WHITE => RANK_7,
+				BLACK => RANK_2,
+				_ => 0,
+			};
+		let no_promo_pawns = friendly_pawns ^ promo_pawns;
+
+		let no_promo_pawns_capt_west =
+			get_pawns_able_to_attack_west_bb::<C>(no_promo_pawns, checkers_mask);
+		let no_promo_pawns_capt_east =
+			get_pawns_able_to_attack_east_bb::<C>(no_promo_pawns, checkers_mask);
+		let promo_pawns_capt_west =
+			get_pawns_able_to_attack_west_bb::<C>(promo_pawns, checkers_mask);
+		let promo_pawns_capt_east =
+			get_pawns_able_to_attack_east_bb::<C>(promo_pawns, checkers_mask);
+
+		let pawn_capt_west_offset = match C {
+			WHITE => direction::NW,
+			BLACK => direction::SW,
+			_ => 0,
+		};
+
+		let pawn_capt_east_offset = match C {
+			WHITE => direction::NE,
+			BLACK => direction::SE,
+			_ => 0,
+		};
+
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_pawns_capt_west,
+			pawn_capt_west_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_pawns_capt_east,
+			pawn_capt_east_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMO_CAPTURES }>(
+			promo_pawns_capt_west,
+			pawn_capt_west_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMO_CAPTURES }>(
+			promo_pawns_capt_east,
+			pawn_capt_east_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		let en_passant_victim_off = match C {
+			WHITE => direction::S,
+			BLACK => direction::N,
+			_ => 0,
+		};
+		if let Some(en_passant) = self.en_passant
+			&& en_passant.get().wrapping_add_signed(en_passant_victim_off) == checker_sq
+		{
+			let mut en_passant_pawns = match C ^ 1 {
+				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
+				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
+				_ => 0,
+			} & friendly_pawns;
+
+			while en_passant_pawns != 0 {
+				let from = en_passant_pawns.trailing_zeros() as u8;
+				clear_lsb(&mut en_passant_pawns);
+				let m = Move::new(from, en_passant.get(), MoveFlag::EpCaptures);
+				buf.push(m);
+			}
+		}
+
+		// KNIGHTS
+		let mut knights = self.pieces[C as usize][Piece::Knight as usize];
+		while knights != 0 {
+			let from = knights.trailing_zeros() as u8;
+			clear_lsb(&mut knights);
+			let knight_targets = get_knight_attacks(from) & checkers_mask;
+			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Captures, buf);
+		}
+
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
+			let bishop_targets = get_sliding_attacks::<true>(from, self.occupied) & checkers_mask;
+			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Captures, buf);
+		}
+
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
+			let rook_targets = get_sliding_attacks::<false>(from, self.occupied) & checkers_mask;
+			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Captures, buf);
+		}
+	}
+
+	fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) {
+		// When in check: generate all king moves, moves that capture the checker, and moves to the
+		// squares in between us and the checker
+		let king = self.pieces[C as usize][Piece::King as usize];
+		let king_sq = king.trailing_zeros() as u8;
+		let checkers_mask: u64;
+		{
+			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
+			let pawn_checker_mask = match C {
+				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
+				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
+				_ => 0,
+			};
+
+			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
+			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
+
+			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
+			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
+
+			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let bishops_queens_checker_mask =
+				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
+
+			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let rooks_queens_checker_mask =
+				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
+			checkers_mask = pawn_checker_mask
+				| knight_checker_mask
+				| king_checker_mask
+				| bishops_queens_checker_mask
+				| rooks_queens_checker_mask;
+		}
+
+		if checkers_mask == 0 {
+			self.gen_pseudo_legal_quiets::<{ C }>(buf);
+			return;
+		}
+
+		let king_attacks = get_king_attacks(king_sq);
+		let king_targets = king_attacks & self.empty;
+		Self::serialize_with_to_bb(king_sq, king_targets, MoveFlag::Quiet, buf);
+
+		// If in double check, stop at king moves
+		if checkers_mask.count_ones() >= 2 {
+			return;
+		}
+
+		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
+
+		// NOTE: Since we are in check, this mask must be empty
+		let target_squares_mask = in_between_mask(king_sq, checker_sq);
+		// PAWNS
+		let friendly_pawns = self.pieces[C as usize][Piece::Pawn as usize];
+		let promo_pawns = friendly_pawns
+			& match C {
+				WHITE => RANK_7,
+				BLACK => RANK_2,
+				_ => 0,
+			};
+		let no_promo_pawns = friendly_pawns ^ promo_pawns;
+		let promo_single_push = get_pawns_able_to_push::<C>(promo_pawns, target_squares_mask);
+		let no_promo_single_push = get_pawns_able_to_push::<C>(no_promo_pawns, target_squares_mask);
+		let no_promo_double_push = get_pawns_able_to_double_push::<C>(
+			no_promo_pawns,
+			target_squares_mask
+				| (self.empty
+					& match C {
+						WHITE => shift_bb::<{ direction::S }>(target_squares_mask),
+						BLACK => shift_bb::<{ direction::N }>(target_squares_mask),
+						_ => 0,
+					}),
+		);
+
+		// Partition into pawns that can only single push
+		let no_promo_single_push = no_promo_double_push ^ no_promo_single_push;
+		let single_push_off = match C {
+			WHITE => N,
+			BLACK => S,
+			_ => 0,
+		};
+
+		let double_push_off = match C {
+			WHITE => 2 * N,
+			BLACK => 2 * S,
+			_ => 0,
+		};
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMOTIONS }>(
+			promo_single_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_single_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_double_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_double_push,
+			double_push_off,
+			MoveFlag::DoublePush,
+			buf,
+		);
+
+		// KNIGHTS
+		let mut knights = self.pieces[C as usize][Piece::Knight as usize];
+		while knights != 0 {
+			let from = knights.trailing_zeros() as u8;
+			clear_lsb(&mut knights);
+			let knight_targets = get_knight_attacks(from) & target_squares_mask;
+			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Quiet, buf);
+		}
+
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
+			let bishop_targets =
+				get_sliding_attacks::<true>(from, self.occupied) & target_squares_mask;
+			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Quiet, buf);
+		}
+
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
+			let rook_targets =
+				get_sliding_attacks::<false>(from, self.occupied) & target_squares_mask;
+			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
+		}
+	}
+
+	pub fn gen_all_pseudo_legal_moves_in_check<const C: u8>(&self, buf: &mut MoveList) {
+		let targets = self.get_opponent_bb::<C>();
+		let king = self.pieces[C as usize][Piece::King as usize];
+		let king_sq = king.trailing_zeros() as u8;
+		let checkers_mask: u64;
+		{
+			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
+			let pawn_checker_mask = match C {
+				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
+				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
+				_ => 0,
+			};
+
+			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
+			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
+
+			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
+			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
+
+			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let bishops_queens_checker_mask =
+				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
+
+			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
+				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+			let rooks_queens_checker_mask =
+				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
+			checkers_mask = pawn_checker_mask
+				| knight_checker_mask
+				| king_checker_mask
+				| bishops_queens_checker_mask
+				| rooks_queens_checker_mask;
+		}
+
+		if checkers_mask == 0 {
+			self.gen_all_pseudo_legal_moves::<{ C }>(buf);
+			return;
+		}
+
+		let king_attacks = get_king_attacks(king_sq);
+		let king_targets = king_attacks & self.empty;
+		let king_attack_targets = king_attacks & targets;
+		Self::serialize_with_to_bb(king_sq, king_attack_targets, MoveFlag::Captures, buf);
+		Self::serialize_with_to_bb(king_sq, king_targets, MoveFlag::Quiet, buf);
+
+		// If in double check, stop at king moves
+		if checkers_mask.count_ones() >= 2 {
+			return;
+		}
+
+		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
+		// NOTE: Since we are in check, this mask must be empty
+		let target_squares_mask = in_between_mask(king_sq, checker_sq);
+
+		let friendly_pawns = self.pieces[C as usize][Piece::Pawn as usize];
+		let promo_pawns = friendly_pawns
+			& match C {
+				WHITE => RANK_7,
+				BLACK => RANK_2,
+				_ => 0,
+			};
+		let no_promo_pawns = friendly_pawns ^ promo_pawns;
+
+		let no_promo_pawns_capt_west =
+			get_pawns_able_to_attack_west_bb::<C>(no_promo_pawns, checkers_mask);
+		let no_promo_pawns_capt_east =
+			get_pawns_able_to_attack_east_bb::<C>(no_promo_pawns, checkers_mask);
+		let promo_pawns_capt_west =
+			get_pawns_able_to_attack_west_bb::<C>(promo_pawns, checkers_mask);
+		let promo_pawns_capt_east =
+			get_pawns_able_to_attack_east_bb::<C>(promo_pawns, checkers_mask);
+		let promo_single_push = get_pawns_able_to_push::<C>(promo_pawns, target_squares_mask);
+		let no_promo_single_push = get_pawns_able_to_push::<C>(no_promo_pawns, target_squares_mask);
+		let no_promo_double_push = get_pawns_able_to_double_push::<C>(
+			no_promo_pawns,
+			target_squares_mask
+				| (self.empty
+					& match C {
+						WHITE => shift_bb::<{ direction::S }>(target_squares_mask),
+						BLACK => shift_bb::<{ direction::N }>(target_squares_mask),
+						_ => 0,
+					}),
+		);
+
+		// Partition into pawns that can only single push
+		let no_promo_single_push = no_promo_double_push ^ no_promo_single_push;
+
+		let pawn_capt_west_offset = match C {
+			WHITE => direction::NW,
+			BLACK => direction::SW,
+			_ => 0,
+		};
+
+		let pawn_capt_east_offset = match C {
+			WHITE => direction::NE,
+			BLACK => direction::SE,
+			_ => 0,
+		};
+
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_pawns_capt_west,
+			pawn_capt_west_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_pawns_capt_east,
+			pawn_capt_east_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMO_CAPTURES }>(
+			promo_pawns_capt_west,
+			pawn_capt_west_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMO_CAPTURES }>(
+			promo_pawns_capt_east,
+			pawn_capt_east_offset,
+			MoveFlag::Captures,
+			buf,
+		);
+
+		let en_passant_victim_off = match C {
+			WHITE => direction::S,
+			BLACK => direction::N,
+			_ => 0,
+		};
+		if let Some(en_passant) = self.en_passant
+			&& en_passant.get().wrapping_add_signed(en_passant_victim_off) == checker_sq
+		{
+			let mut en_passant_pawns = match C ^ 1 {
+				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
+				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
+				_ => 0,
+			} & friendly_pawns;
+
+			while en_passant_pawns != 0 {
+				let from = en_passant_pawns.trailing_zeros() as u8;
+				clear_lsb(&mut en_passant_pawns);
+				let m = Move::new(from, en_passant.get(), MoveFlag::EpCaptures);
+				buf.push(m);
+			}
+		}
+
+		let single_push_off = match C {
+			WHITE => N,
+			BLACK => S,
+			_ => 0,
+		};
+
+		let double_push_off = match C {
+			WHITE => 2 * N,
+			BLACK => 2 * S,
+			_ => 0,
+		};
+
+		Self::serialize_with_offset::<{ serialization_flags::PROMOTIONS }>(
+			promo_single_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_single_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_double_push,
+			single_push_off,
+			MoveFlag::Quiet,
+			buf,
+		);
+		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
+			no_promo_double_push,
+			double_push_off,
+			MoveFlag::DoublePush,
+			buf,
+		);
+
+		// KNIGHTS
+		let mut knights = self.pieces[C as usize][Piece::Knight as usize];
+		while knights != 0 {
+			let from = knights.trailing_zeros() as u8;
+			clear_lsb(&mut knights);
+			let knight_attacks = get_knight_attacks(from);
+			let knight_attack_targets = knight_attacks & checkers_mask;
+			let knight_targets = knight_attacks & target_squares_mask;
+			Self::serialize_with_to_bb(from, knight_attack_targets, MoveFlag::Captures, buf);
+			Self::serialize_with_to_bb(from, knight_targets, MoveFlag::Quiet, buf);
+		}
+
+		// BISHOPS/QUEENS
+		let mut bishops_queens = self.pieces[C as usize][Piece::Bishop as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while bishops_queens != 0 {
+			let from = bishops_queens.trailing_zeros() as u8;
+			clear_lsb(&mut bishops_queens);
+			let bishop_attacks = get_sliding_attacks::<true>(from, self.occupied);
+			let bishop_attack_targets = bishop_attacks & checkers_mask;
+			let bishop_targets = bishop_attacks & target_squares_mask;
+			Self::serialize_with_to_bb(from, bishop_attack_targets, MoveFlag::Captures, buf);
+			Self::serialize_with_to_bb(from, bishop_targets, MoveFlag::Quiet, buf);
+		}
+
+		// ROOKS/QUEENS
+		let mut rooks_queens = self.pieces[C as usize][Piece::Rook as usize]
+			| self.pieces[C as usize][Piece::Queen as usize];
+		while rooks_queens != 0 {
+			let from = rooks_queens.trailing_zeros() as u8;
+			clear_lsb(&mut rooks_queens);
+			let rook_attacks = get_sliding_attacks::<false>(from, self.occupied);
+			let rook_attack_targets = rook_attacks & checkers_mask;
+			let rook_targets = rook_attacks & target_squares_mask;
+			Self::serialize_with_to_bb(from, rook_attack_targets, MoveFlag::Captures, buf);
+			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
+		}
+	}
+
 	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8>(&self, buf: &mut MoveList) {
 		match S {
 			move_gen_stages::CAPTURES => self.gen_pseudo_legal_captures::<C>(buf),
 			move_gen_stages::QUIETS => self.gen_pseudo_legal_quiets::<C>(buf),
 			move_gen_stages::ALL => self.gen_all_pseudo_legal_moves::<C>(buf),
 			_ => {}
+		};
+	}
+
+	pub fn gen_all_pseudo_legal_moves_non_monomorphizing(&self, buf: &mut MoveList) {
+		// Integrates a check if no in check anyways
+		match self.turn {
+			Color::White => self.gen_all_pseudo_legal_moves_in_check::<WHITE>(buf),
+			Color::Black => self.gen_all_pseudo_legal_moves_in_check::<BLACK>(buf),
+		};
+	}
+
+	pub fn gen_pseudo_legal_captures_non_monomorphizing(&self, buf: &mut MoveList) {
+		match self.turn {
+			Color::White => self.gen_pseudo_legal_captures_in_check::<WHITE>(buf),
+			Color::Black => self.gen_pseudo_legal_captures_in_check::<BLACK>(buf),
 		};
 	}
 }

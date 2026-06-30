@@ -40,7 +40,7 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
-	fn quiescence_search(&mut self, mut alpha: i32, beta: i32) -> Option<i32> {
+	fn quiescence_search(&mut self, ply_from_root: u16, mut alpha: i32, beta: i32) -> Option<i32> {
 		self.check_counter += 1;
 
 		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
@@ -61,33 +61,53 @@ impl<'a> SearchCtx<'a> {
 
 		self.nodes += 1;
 
-		let mut best_value = eval::eval_board_objective(&self.board)
-			* match self.board.get_turn() {
-				Color::White => 1,
-				Color::Black => -1,
-			};
-
-		if best_value >= beta {
-			return Some(best_value);
-		}
-
-		if best_value > alpha {
-			alpha = best_value;
-		}
-
-		let mut move_list = MoveList::default();
-		match self.board.get_turn() {
-			Color::White => self
-				.board
-				.gen_pseudo_legal_captures::<WHITE>(&mut move_list),
-			Color::Black => self
-				.board
-				.gen_pseudo_legal_captures::<BLACK>(&mut move_list),
+		let is_in_check = match self.board.get_turn() {
+			Color::White => self.board.is_in_check::<WHITE>(),
+			Color::Black => self.board.is_in_check::<BLACK>(),
 		};
+
+		let mut best_value = -999999;
+		let mut move_list = MoveList::default();
+		if is_in_check {
+			match self.board.get_turn() {
+				Color::White => self
+					.board
+					.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
+				Color::Black => self
+					.board
+					.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
+			}
+		} else {
+			// This avoids checking if in check twice
+			match self.board.get_turn() {
+				Color::White => self
+					.board
+					.gen_pseudo_legal_captures::<WHITE>(&mut move_list),
+				Color::Black => self
+					.board
+					.gen_pseudo_legal_captures::<BLACK>(&mut move_list),
+			}
+
+			// Standing pat
+			best_value = eval::eval_board_objective(&self.board)
+				* match self.board.get_turn() {
+					Color::White => 1,
+					Color::Black => -1,
+				};
+
+			if best_value >= beta {
+				return Some(best_value);
+			}
+
+			if best_value > alpha {
+				alpha = best_value;
+			}
+		}
 
 		let mut ordered_move_list =
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
 
+		let mut num_legal_moves = 0;
 		while let Some(m) = ordered_move_list.pick_move(&self.board) {
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
@@ -106,8 +126,9 @@ impl<'a> SearchCtx<'a> {
 				};
 				continue;
 			}
+			num_legal_moves += 1;
 
-			let score = -self.quiescence_search(-beta, -alpha)?;
+			let score = -self.quiescence_search(ply_from_root + 1, -beta, -alpha)?;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
@@ -129,20 +150,10 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
-		// This doesn't work in QS since we generate pseudo legal captures only
-		/*
-		if num_legal_moves == 0 {
-			if match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<WHITE>(),
-				Color::Black => self.board.is_in_check::<BLACK>(),
-			} {
-				let mating_value = -99999 + ply_from_root as i32;
-				return Some(mating_value);
-			}
-
-			return Some(0);
+		if num_legal_moves == 0 && is_in_check {
+			let mating_value = -99999 + ply_from_root as i32;
+			return Some(mating_value);
 		}
-		*/
 
 		Some(best_value)
 	}
@@ -163,7 +174,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if depth == 0 {
-			return self.quiescence_search(alpha, beta);
+			return self.quiescence_search(ply_from_root, alpha, beta);
 		}
 
 		if !self.stop_search
@@ -194,14 +205,8 @@ impl<'a> SearchCtx<'a> {
 
 		let mut move_list = MoveList::default();
 
-		match self.board.get_turn() {
-			Color::White => self
-				.board
-				.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-			Color::Black => self
-				.board
-				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-		};
+		self.board
+			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
 
 		let mut ordered_move_list =
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
@@ -315,14 +320,8 @@ impl<'a> SearchCtx<'a> {
 
 		let mut move_list = MoveList::default();
 
-		match self.board.get_turn() {
-			Color::White => self
-				.board
-				.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-			Color::Black => self
-				.board
-				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-		};
+		self.board
+			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
 
 		let mut ordered_move_list =
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);

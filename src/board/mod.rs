@@ -1,4 +1,5 @@
 mod attacks;
+mod in_between;
 pub mod movegen;
 mod quiets;
 mod sliding_attack_table;

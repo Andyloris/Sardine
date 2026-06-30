@@ -22,10 +22,7 @@ fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 
 	let mut move_list = MoveList::default();
 
-	match brd.get_turn() {
-		Color::White => brd.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-		Color::Black => brd.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-	};
+	brd.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
 
 	let mut nodes = 0;
 	for m in move_list.iter() {
@@ -108,10 +105,20 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 	correct_moves.sort_by_key(|a| (a.0, a.1));
 	let mut move_list = MoveList::default();
 
-	match brd.get_turn() {
-		Color::White => brd.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-		Color::Black => brd.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-	};
+	if match brd.get_turn() {
+		Color::White => brd.is_in_check::<WHITE>(),
+		Color::Black => brd.is_in_check::<BLACK>(),
+	} {
+		match brd.get_turn() {
+			Color::White => brd.gen_all_pseudo_legal_moves_in_check::<WHITE>(&mut move_list),
+			Color::Black => brd.gen_all_pseudo_legal_moves_in_check::<BLACK>(&mut move_list),
+		};
+	} else {
+		match brd.get_turn() {
+			Color::White => brd.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
+			Color::Black => brd.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
+		};
+	}
 	let mut my_moves = move_list
 		.iter()
 		.filter_map(|m| {
@@ -221,8 +228,8 @@ fn test_against_shakmaty(fen: &str, max_depth: usize) {
 		fen.into_position(shakmaty::CastlingMode::Standard).unwrap()
 	};
 	for d in 1..=max_depth {
-		//let mut pv = vec![];
-		//coupled_perft(&shakmaty_pos, &board, d, &mut pv);
+		let mut pv = vec![];
+		coupled_perft(&shakmaty_pos, &board, d, &mut pv);
 		println!("Searched nodes: {}", perft_driver(&mut board, d));
 		println!("Shakmaty nodes: {}\n", shakmaty_perft(&shakmaty_pos, d));
 	}
@@ -240,8 +247,8 @@ fn main() {
 	//	println!("Perft: {}", perft(&board, 2));
 	//perft(&board, 3);
 	/*test_against_shakmaty(
-		"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
-		6,
+		"rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8  ",
+		5,
 	);*/
 
 	let mut uci = UCIInstance::new();
