@@ -15,6 +15,11 @@ use crate::{
 
 const TIMER_CHECK_INTERVAL: usize = 4096;
 
+mod node_types {
+	pub const NON_PV: u8 = 0;
+	pub const PV: u8 = 1;
+}
+
 pub struct SearchCtx<'a> {
 	tt: &'a mut TT,
 	board: Board,
@@ -158,7 +163,7 @@ impl<'a> SearchCtx<'a> {
 		Some(best_value)
 	}
 
-	fn negamax(
+	fn negamax<const NODE_TYPE: u8>(
 		&mut self,
 		depth: u16,
 		ply_from_root: u16,
@@ -233,9 +238,27 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			num_legal_moves += 1;
+			let mut score: i32;
+			if num_legal_moves == 0 {
+				score = -self.negamax::<NODE_TYPE>(depth - 1, ply_from_root + 1, -beta, -alpha)?;
+			} else {
+				score = -self.negamax::<{ node_types::NON_PV }>(
+					depth - 1,
+					ply_from_root + 1,
+					-alpha - 1,
+					-alpha,
+				)?;
+				if score > alpha && NODE_TYPE == node_types::PV {
+					score = -self.negamax::<{ node_types::PV }>(
+						depth - 1,
+						ply_from_root + 1,
+						-beta,
+						-alpha,
+					)?;
+				}
+			}
 
-			let score = -self.negamax(depth - 1, ply_from_root + 1, -beta, -alpha)?;
+			num_legal_moves += 1;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
@@ -327,6 +350,7 @@ impl<'a> SearchCtx<'a> {
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
 
 		let mut best_value = -999999;
+		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = ordered_move_list.pick_move(&self.board) {
 			//for m in move_list.iter() {
@@ -360,7 +384,18 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			let score = -self.negamax(depth - 1, 1, -beta, -alpha)?;
+			let mut score: i32;
+			if num_legal_moves == 0 {
+				score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
+			} else {
+				score =
+					-self.negamax::<{ node_types::NON_PV }>(depth - 1, 1, -alpha - 1, -alpha)?;
+				if score > alpha {
+					score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
+				}
+			}
+
+			num_legal_moves += 1;
 
 			match self.board.get_turn() {
 				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
