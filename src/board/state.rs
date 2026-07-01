@@ -17,6 +17,48 @@ pub struct UndoInfo {
 }
 
 impl Board {
+	pub fn do_null_move(&mut self) -> UndoInfo {
+		let mut undo_info = UndoInfo {
+			victim: None,
+			en_passant: self.en_passant,
+			halfmove_clock: self.halfmove_clock,
+			zobrist: self.zobrist,
+			king_castle_flags: self.king_castle_flags,
+			queen_castle_flags: self.queen_castle_flags,
+		};
+
+		self.halfmove_clock += 1;
+
+		if let Some(sq) = self.en_passant {
+			let sq = sq.get();
+			self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(sq));
+			self.apply_zobrist_delta(ZobristDelta::EnPassantSquareChange(0));
+			self.en_passant = None;
+		}
+
+		self.turn = match self.turn {
+			Color::White => Color::Black,
+			Color::Black => Color::White,
+		};
+
+		self.apply_zobrist_delta(ZobristDelta::WhiteTurn);
+		self.hash_history.push(self.zobrist);
+		undo_info
+	}
+
+	pub fn undo_null_move(&mut self, undo_info: UndoInfo) {
+		self.hash_history.pop();
+
+		self.turn = match self.turn {
+			Color::White => Color::Black,
+			Color::Black => Color::White,
+		};
+
+		self.en_passant = undo_info.en_passant;
+		self.halfmove_clock = undo_info.halfmove_clock;
+		self.zobrist = undo_info.zobrist;
+	}
+
 	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<UndoInfo> {
 		let mut undo_info = UndoInfo {
 			victim: None,

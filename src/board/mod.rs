@@ -56,6 +56,13 @@ impl Board {
 		self.pieces[color as usize][piece as usize]
 	}
 
+	pub fn has_non_pawn_material<const C: u8>(&self) -> bool {
+		self.pieces[C as usize][Piece::Knight as usize] != 0
+			|| self.pieces[C as usize][Piece::Bishop as usize] != 0
+			|| self.pieces[C as usize][Piece::Rook as usize] != 0
+			|| self.pieces[C as usize][Piece::Queen as usize] != 0
+	}
+
 	pub const fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
 		let mask = 1u64 << sq;
 		if (self.pieces[C as usize][Piece::Pawn as usize] & mask) != 0 {

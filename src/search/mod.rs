@@ -210,8 +210,31 @@ impl<'a> SearchCtx<'a> {
 
 		let mut move_list = MoveList::default();
 
-		self.board
+		let in_check = self
+			.board
 			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
+
+		{
+			let r = 3;
+			if !in_check
+				&& depth > r && match self.board.get_turn() {
+				Color::White => self.board.has_non_pawn_material::<WHITE>(),
+				Color::Black => self.board.has_non_pawn_material::<BLACK>(),
+			} {
+				let undo_info = self.board.do_null_move();
+				let score = -self.negamax::<NODE_TYPE>(
+					depth - 1 - r,
+					ply_from_root + 1,
+					-beta,
+					-beta + 1,
+				)?;
+				self.board.undo_null_move(undo_info);
+
+				if score >= beta {
+					return Some(score);
+				}
+			}
+		}
 
 		let mut ordered_move_list =
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
@@ -238,6 +261,7 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			// ToDo: Implementation leaves board messed up after quitting search when timing out
 			let mut score: i32;
 			if num_legal_moves == 0 {
 				score = -self.negamax::<NODE_TYPE>(depth - 1, ply_from_root + 1, -beta, -alpha)?;
@@ -440,7 +464,7 @@ impl<'a> SearchCtx<'a> {
 		self.nodes = 0;
 
 		for d in 1..=self.max_depth.max(1) {
-			let cur_best_info = self.bestmove(d, i32::MIN + 1, i32::MAX);
+			let cur_best_info = self.bestmove(d, -999999999, 999999999);
 			if self.stop_search {
 				break;
 			}

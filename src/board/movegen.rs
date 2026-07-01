@@ -809,7 +809,8 @@ impl Board {
 		}
 	}
 
-	pub fn gen_pseudo_legal_captures_in_check<const C: u8>(&self, buf: &mut MoveList) {
+	// Also tells us if we are in check
+	pub fn gen_pseudo_legal_captures_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
 		// When in check: generate all king moves, moves that capture the checker, and moves to the
 		// squares in between us and the checker
 		let targets = self.get_opponent_bb::<C>();
@@ -848,7 +849,7 @@ impl Board {
 
 		if checkers_mask == 0 {
 			self.gen_pseudo_legal_captures::<{ C }>(buf);
-			return;
+			return false;
 		}
 
 		let king_attacks = get_king_attacks(king_sq);
@@ -857,7 +858,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return;
+			return true;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -970,9 +971,11 @@ impl Board {
 			let rook_targets = get_sliding_attacks::<false>(from, self.occupied) & checkers_mask;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Captures, buf);
 		}
+
+		true
 	}
 
-	fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) {
+	fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
 		// When in check: generate all king moves, moves that capture the checker, and moves to the
 		// squares in between us and the checker
 		let king = self.pieces[C as usize][Piece::King as usize];
@@ -1010,7 +1013,7 @@ impl Board {
 
 		if checkers_mask == 0 {
 			self.gen_pseudo_legal_quiets::<{ C }>(buf);
-			return;
+			return false;
 		}
 
 		let king_attacks = get_king_attacks(king_sq);
@@ -1019,7 +1022,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return;
+			return true;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -1117,9 +1120,11 @@ impl Board {
 				get_sliding_attacks::<false>(from, self.occupied) & target_squares_mask;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
 		}
+
+		true
 	}
 
-	pub fn gen_all_pseudo_legal_moves_in_check<const C: u8>(&self, buf: &mut MoveList) {
+	pub fn gen_all_pseudo_legal_moves_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
 		let targets = self.get_opponent_bb::<C>();
 		let king = self.pieces[C as usize][Piece::King as usize];
 		let king_sq = king.trailing_zeros() as u8;
@@ -1156,7 +1161,7 @@ impl Board {
 
 		if checkers_mask == 0 {
 			self.gen_all_pseudo_legal_moves::<{ C }>(buf);
-			return;
+			return false;
 		}
 
 		let king_attacks = get_king_attacks(king_sq);
@@ -1167,7 +1172,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return;
+			return true;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -1343,6 +1348,8 @@ impl Board {
 			Self::serialize_with_to_bb(from, rook_attack_targets, MoveFlag::Captures, buf);
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
 		}
+
+		true
 	}
 
 	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8>(&self, buf: &mut MoveList) {
@@ -1354,18 +1361,18 @@ impl Board {
 		};
 	}
 
-	pub fn gen_all_pseudo_legal_moves_non_monomorphizing(&self, buf: &mut MoveList) {
+	pub fn gen_all_pseudo_legal_moves_non_monomorphizing(&self, buf: &mut MoveList) -> bool {
 		// Integrates a check if no in check anyways
 		match self.turn {
 			Color::White => self.gen_all_pseudo_legal_moves_in_check::<WHITE>(buf),
 			Color::Black => self.gen_all_pseudo_legal_moves_in_check::<BLACK>(buf),
-		};
+		}
 	}
 
-	pub fn gen_pseudo_legal_captures_non_monomorphizing(&self, buf: &mut MoveList) {
+	pub fn gen_pseudo_legal_captures_non_monomorphizing(&self, buf: &mut MoveList) -> bool {
 		match self.turn {
 			Color::White => self.gen_pseudo_legal_captures_in_check::<WHITE>(buf),
 			Color::Black => self.gen_pseudo_legal_captures_in_check::<BLACK>(buf),
-		};
+		}
 	}
 }
