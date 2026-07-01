@@ -213,16 +213,17 @@ impl<'a> SearchCtx<'a> {
 		let in_check = self
 			.board
 			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
-
+		// NMP
 		{
-			let r = 3;
+			let r = 2 + depth / 6;
 			if !in_check
 				&& depth > r && match self.board.get_turn() {
 				Color::White => self.board.has_non_pawn_material::<WHITE>(),
 				Color::Black => self.board.has_non_pawn_material::<BLACK>(),
-			} {
+			} && NODE_TYPE == node_types::NON_PV
+			{
 				let undo_info = self.board.do_null_move();
-				let score = -self.negamax::<NODE_TYPE>(
+				let score = -self.negamax::<{ node_types::NON_PV }>(
 					depth - 1 - r,
 					ply_from_root + 1,
 					-beta,
