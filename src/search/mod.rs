@@ -48,7 +48,7 @@ impl<'a> SearchCtx<'a> {
 	fn quiescence_search(&mut self, ply_from_root: u16, mut alpha: i32, beta: i32) -> Option<i32> {
 		self.check_counter += 1;
 
-		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
+		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
 			return Some(0);
 		}
@@ -173,7 +173,7 @@ impl<'a> SearchCtx<'a> {
 		let alpha_orig = alpha;
 		self.check_counter += 1;
 
-		if self.board.detect_threefold_repetition() || self.board.fifty_moves_rule() {
+		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
 			return Some(0);
 		}

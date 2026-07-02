@@ -238,14 +238,18 @@ impl Board {
 		res
 	}
 
-	pub fn detect_threefold_repetition(&self) -> bool {
-		let mut num_repetitions = 0;
-		for h in self.hash_history.iter().rev().step_by(2) {
+	// Only one repetition for draw score
+	pub fn detect_repetition(&self) -> bool {
+		let mut relevant_hash_history = self
+			.hash_history
+			.iter()
+			.rev()
+			.step_by(2)
+			.take(self.halfmove_clock.div_ceil(2));
+		relevant_hash_history.next();
+		for h in relevant_hash_history {
 			if *h == self.zobrist {
-				num_repetitions += 1;
-				if num_repetitions >= 2 {
-					return true;
-				}
+				return true;
 			}
 		}
 
