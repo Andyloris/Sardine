@@ -26,7 +26,7 @@ const MG_KNIGHT_TABLE: [i32; 64] = [
 ];
 
 const EG_KNIGHT_TABLE: [i32; 64] = [
-	-58, -38, -13, -28, -31, -27, -63, -99, -25, -8, -25, -2, -9, -25, -24, -52, -24, -20, 10, 9,
+	-58, -38, -13, -28, -31, -27, -56, -99, -25, -8, -25, -2, -9, -25, -24, -52, -24, -20, 10, 9,
 	-1, -9, -19, -41, -17, 3, 22, 22, 22, 11, 8, -18, -18, -6, 16, 25, 16, 17, 4, -18, -23, -3, -1,
 	15, 10, -3, -20, -22, -42, -20, -10, -5, -2, -20, -23, -44, -29, -51, -23, -15, -22, -18, -50,
 	-64,
@@ -45,7 +45,7 @@ const EG_BISHOP_TABLE: [i32; 64] = [
 ];
 
 const MG_ROOK_TABLE: [i32; 64] = [
-	32, 42, 32, 51, 63, 9, 31, 43, 27, 32, 58, 62, 80, 67, 26, 44, -5, 19, 26, 36, 17, 45, 61, 16,
+	32, 42, 32, 51, 56, 9, 31, 43, 27, 32, 58, 62, 80, 67, 26, 44, -5, 19, 26, 36, 17, 45, 61, 16,
 	-24, -11, 7, 26, 24, 35, -8, -20, -36, -26, -12, -1, 9, -7, 6, -23, -45, -25, -16, -17, 3, 0,
 	-5, -33, -44, -16, -20, -9, -1, 11, -6, -71, -19, -13, 1, 17, 16, 7, -37, -26,
 ];
@@ -101,14 +101,110 @@ static EG_PSTS: [[i32; 64]; 6] = [
 
 const GAMEPHASE_INCREMENTS: [u8; 6] = [0, 1, 1, 2, 4, 0];
 
-pub fn eval_board_objective(board: &Board) -> i32 {
-	let mut material = 0;
+impl Board {
+	pub(crate) fn init_evaluation(&mut self) {
+		for piece in PIECES {
+			let mut w_bb = self.pieces[WHITE as usize][piece as usize];
+			let mut b_bb = self.pieces[BLACK as usize][piece as usize];
 
-	for piece in PIECES {
-		material += MATERIAL_WEIGHTS[piece as usize]
-			* (board.get_num_pieces::<{ WHITE }>(piece) as i32
-				- board.get_num_pieces::<{ BLACK }>(piece) as i32);
+			while w_bb != 0 {
+				let sq = w_bb.trailing_zeros();
+				clear_lsb(&mut w_bb);
+
+				self.mg_material_score += MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score += EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values += MG_PSTS[piece as usize][sq as usize ^ 56];
+				self.eg_pst_values += EG_PSTS[piece as usize][sq as usize ^ 56];
+
+				self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
+			}
+
+			while b_bb != 0 {
+				let sq = b_bb.trailing_zeros();
+				clear_lsb(&mut b_bb);
+
+				self.mg_material_score -= MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score -= EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values -= MG_PSTS[piece as usize][sq as usize];
+				self.eg_pst_values -= EG_PSTS[piece as usize][sq as usize];
+
+				self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
+			}
+		}
 	}
 
-	material
+	#[inline(always)]
+	pub(crate) fn evaluation_add_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
+		let PieceColorPair(piece, color) = piece_color;
+		match color {
+			Color::White => {
+				self.mg_material_score += MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score += EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values += MG_PSTS[piece as usize][sq as usize ^ 56];
+				self.eg_pst_values += EG_PSTS[piece as usize][sq as usize ^ 56];
+			}
+
+			Color::Black => {
+				self.mg_material_score -= MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score -= EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values -= MG_PSTS[piece as usize][sq as usize];
+				self.eg_pst_values -= EG_PSTS[piece as usize][sq as usize];
+			}
+		};
+
+		self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
+	}
+
+	#[inline(always)]
+	pub(crate) fn evaluation_remove_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
+		let PieceColorPair(piece, color) = piece_color;
+		match color {
+			Color::White => {
+				self.mg_material_score -= MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score -= EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values -= MG_PSTS[piece as usize][sq as usize ^ 56];
+				self.eg_pst_values -= EG_PSTS[piece as usize][sq as usize ^ 56];
+			}
+
+			Color::Black => {
+				self.mg_material_score += MG_MATERIAL_WEIGHTS[piece as usize];
+				self.eg_material_score += EG_MATERIAL_WEIGHTS[piece as usize];
+				self.mg_pst_values += MG_PSTS[piece as usize][sq as usize];
+				self.eg_pst_values += EG_PSTS[piece as usize][sq as usize];
+			}
+		};
+
+		self.gamephase -= GAMEPHASE_INCREMENTS[piece as usize];
+	}
+
+	#[inline(always)]
+	pub(crate) fn evaluation_move_piece(&mut self, from: u8, to: u8, piece_color: PieceColorPair) {
+		let PieceColorPair(piece, color) = piece_color;
+		match color {
+			Color::White => {
+				self.mg_pst_values -= MG_PSTS[piece as usize][from as usize ^ 56];
+				self.eg_pst_values -= EG_PSTS[piece as usize][from as usize ^ 56];
+
+				self.mg_pst_values += MG_PSTS[piece as usize][to as usize ^ 56];
+				self.eg_pst_values += EG_PSTS[piece as usize][to as usize ^ 56];
+			}
+
+			Color::Black => {
+				self.mg_pst_values += MG_PSTS[piece as usize][from as usize];
+				self.eg_pst_values += EG_PSTS[piece as usize][from as usize];
+
+				self.mg_pst_values -= MG_PSTS[piece as usize][to as usize];
+				self.eg_pst_values -= EG_PSTS[piece as usize][to as usize];
+			}
+		}
+	}
+
+	pub fn eval_objective(&self) -> i32 {
+		let mg_weight = self.gamephase.min(24) as i32;
+		let eg_weight = 24 - mg_weight;
+
+		(mg_weight * (self.mg_pst_values + self.mg_material_score)
+			+ eg_weight * (self.eg_pst_values + self.eg_material_score))
+			/ 24
+	}
 }

@@ -1,4 +1,5 @@
 mod attacks;
+mod eval;
 mod in_between;
 pub mod movegen;
 mod quiets;
@@ -29,6 +30,12 @@ pub struct Board {
 
 	zobrist: u64,
 	hash_history: Vec<u64>,
+
+	mg_material_score: i32,
+	eg_material_score: i32,
+	mg_pst_values: i32,
+	eg_pst_values: i32,
+	gamephase: u8,
 }
 
 impl Board {
@@ -195,6 +202,7 @@ impl Board {
 		board.hash_history = Vec::with_capacity(256);
 		board.hash_history.push(board.zobrist);
 		board.gen_redundant_sets();
+		board.init_evaluation();
 
 		Some(board)
 	}

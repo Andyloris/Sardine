@@ -94,7 +94,7 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			// Standing pat
-			best_value = eval::eval_board_objective(&self.board)
+			best_value = self.board.eval_objective()
 				* match self.board.get_turn() {
 					Color::White => 1,
 					Color::Black => -1,
