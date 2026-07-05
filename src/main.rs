@@ -10,7 +10,6 @@ use crate::{
 };
 
 mod board;
-mod eval;
 mod search;
 mod tt;
 mod uci;

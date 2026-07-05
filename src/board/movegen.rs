@@ -9,8 +9,8 @@ use crate::board::{
 	in_between::in_between_mask,
 	quiets::{get_pawns_able_to_double_push, get_pawns_able_to_push},
 	utils::{
-		BLACK, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_2, RANK_7, Square,
-		Squares, WHITE, clear_lsb,
+		BLACK, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_1, RANK_2, RANK_7, RANK_8,
+		Square, Squares, WHITE, clear_lsb,
 		direction::{self, N, S},
 		shift_bb,
 	},
@@ -68,6 +68,7 @@ impl Move {
 		Self(packed)
 	}
 
+	#[inline(always)]
 	pub fn unpack(self) -> (u8, u8, MoveFlag) {
 		(
 			self.0 as u8 & 0x3F,
@@ -76,16 +77,34 @@ impl Move {
 		)
 	}
 
+	#[inline(always)]
 	pub fn get_from(self) -> u8 {
 		self.0 as u8 & 0x3F
 	}
 
+	#[inline(always)]
 	pub fn get_to(self) -> u8 {
 		(self.0 >> 6) as u8 & 0x3F
 	}
 
+	#[inline(always)]
 	pub fn get_flags(self) -> MoveFlag {
 		MoveFlag::from((self.0 >> 12) as u8 & 0xF)
+	}
+
+	#[inline(always)]
+	pub fn is_quiet(self) -> bool {
+		matches!(
+			self.get_flags(),
+			MoveFlag::Quiet
+				| MoveFlag::DoublePush
+				| MoveFlag::KCastle
+				| MoveFlag::QCastle
+				| MoveFlag::KnightPromotion
+				| MoveFlag::BishopPromotion
+				| MoveFlag::RookPromotion
+				| MoveFlag::QueenPromotion
+		)
 	}
 }
 
@@ -975,7 +994,7 @@ impl Board {
 		true
 	}
 
-	fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
+	pub fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
 		// When in check: generate all king moves, moves that capture the checker, and moves to the
 		// squares in between us and the checker
 		let king = self.pieces[C as usize][Piece::King as usize];
@@ -1373,6 +1392,146 @@ impl Board {
 		match self.turn {
 			Color::White => self.gen_pseudo_legal_captures_in_check::<WHITE>(buf),
 			Color::Black => self.gen_pseudo_legal_captures_in_check::<BLACK>(buf),
+		}
+	}
+
+	pub fn is_pseudo_legal<const C: u8>(&self, m: &Move) -> bool {
+		let (from, to, flags) = m.unpack();
+		let from_piece = self.get_piece_at_square::<C>(from);
+		if from_piece.is_none() {
+			return false;
+		}
+		let from_piece = from_piece.unwrap();
+
+		let to_mask = 1u64 << to;
+
+		match flags {
+			MoveFlag::Quiet => {
+				((to_mask & self.occupied) == 0)
+					&& match from_piece {
+						Piece::Pawn => {
+							to == from.wrapping_add_signed(match C {
+								WHITE => N,
+								BLACK => S,
+								_ => 0,
+							})
+						}
+						Piece::Knight => (get_knight_attacks(from) & to_mask) != 0,
+						Piece::Bishop => {
+							(get_sliding_attacks::<true>(from, self.occupied) & to_mask) != 0
+						}
+						Piece::Rook => {
+							(get_sliding_attacks::<false>(from, self.occupied) & to_mask) != 0
+						}
+						Piece::Queen => {
+							(get_sliding_attacks::<true>(from, self.occupied) & to_mask) != 0
+								|| (get_sliding_attacks::<false>(from, self.occupied) & to_mask)
+									!= 0
+						}
+						Piece::King => (get_king_attacks(from) & to_mask) != 0,
+					}
+			}
+
+			MoveFlag::DoublePush => {
+				(from_piece == Piece::Pawn)
+					&& to
+						== from.wrapping_add_signed(match C {
+							WHITE => 2 * N,
+							BLACK => 2 * S,
+							_ => 0,
+						})
+			}
+
+			MoveFlag::KCastle => {
+				let (king_square, rook_square, rook_target_square) = match C {
+					WHITE => (Squares::E1 as u8, Squares::H1 as u8, Squares::F1 as u8),
+					BLACK => (Squares::E8 as u8, Squares::H8 as u8, Squares::F8 as u8),
+					_ => (0, 0, 0),
+				};
+
+				let rook_mask = 1u64 << rook_square;
+
+				self.king_castle_flags[C as usize]
+					&& (from_piece == Piece::King)
+					&& (from == king_square)
+					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
+					&& (self.occupied & KING_CASTLE_MASKS[C as usize]) == 0
+					&& match C {
+						WHITE => !self.is_square_attacked::<BLACK>(rook_target_square),
+						BLACK => !self.is_square_attacked::<WHITE>(rook_target_square),
+						_ => false,
+					}
+			}
+
+			MoveFlag::QCastle => {
+				let (king_square, rook_square, rook_target_square) = match C {
+					WHITE => (Squares::E1 as u8, Squares::A1 as u8, Squares::D1 as u8),
+					BLACK => (Squares::E8 as u8, Squares::A8 as u8, Squares::D8 as u8),
+					_ => (0, 0, 0),
+				};
+
+				let rook_mask = 1u64 << rook_square;
+
+				self.queen_castle_flags[C as usize]
+					&& (from_piece == Piece::King)
+					&& (from == king_square)
+					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
+					&& (self.occupied & QUEEN_CASTLE_MASKS[C as usize]) == 0
+					&& match C {
+						WHITE => !self.is_square_attacked::<BLACK>(rook_target_square),
+						BLACK => !self.is_square_attacked::<WHITE>(rook_target_square),
+						_ => false,
+					}
+			}
+
+			MoveFlag::Captures => {
+				((to_mask & self.pieces_by_color[C as usize ^ 1]) != 0)
+					&& match from_piece {
+						Piece::Pawn => get_pawn_attacks::<C>(from) & to_mask != 0,
+						Piece::Knight => (get_knight_attacks(from) & to_mask) != 0,
+						Piece::Bishop => {
+							(get_sliding_attacks::<true>(from, self.occupied) & to_mask) != 0
+						}
+						Piece::Rook => {
+							(get_sliding_attacks::<false>(from, self.occupied) & to_mask) != 0
+						}
+						Piece::Queen => {
+							(get_sliding_attacks::<true>(from, self.occupied) & to_mask) != 0
+								|| (get_sliding_attacks::<false>(from, self.occupied) & to_mask)
+									!= 0
+						}
+						Piece::King => (get_king_attacks(from) & to_mask) != 0,
+					}
+			}
+
+			MoveFlag::EpCaptures => {
+				(from_piece == Piece::Pawn)
+					&& self.en_passant.is_some()
+					&& self.en_passant.unwrap().get() == to
+			}
+
+			MoveFlag::KnightPromotion
+			| MoveFlag::BishopPromotion
+			| MoveFlag::RookPromotion
+			| MoveFlag::QueenPromotion => {
+				(from_piece == Piece::Pawn)
+					&& (to_mask & self.occupied) == 0
+					&& (to_mask
+						& match C {
+							WHITE => RANK_8,
+							BLACK => RANK_1,
+							_ => 0,
+						}) != 0
+			}
+
+			MoveFlag::KnightPromoCapture
+			| MoveFlag::BishopPromoCapture
+			| MoveFlag::RookPromoCapture
+			| MoveFlag::QueenPromoCapture => {
+				(from_piece == Piece::Pawn)
+					&& (to_mask & self.pieces_by_color[C as usize ^ 1]) != 0
+					&& (to_mask & get_pawn_attacks::<C>(from)) != 0
+			}
 		}
 	}
 }

@@ -1,5 +1,5 @@
 mod attacks;
-mod eval;
+pub mod eval;
 mod in_between;
 pub mod movegen;
 mod quiets;

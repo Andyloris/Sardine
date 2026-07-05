@@ -3,9 +3,22 @@ use crate::board::{
 	utils::{BLACK, Color, NUM_PIECES, PIECES, PieceColorPair, WHITE, clear_lsb},
 };
 
-const MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [100, 300, 330, 500, 900, 20000];
 const MG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [82, 337, 365, 477, 1025, 20000];
 const EG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [94, 281, 297, 512, 936, 20000];
+
+pub const MATERIAL_WEIGHTS: [i32; NUM_PIECES] = {
+	let mut res: [i32; NUM_PIECES] = [0; NUM_PIECES];
+	let mut p = 0;
+	loop {
+		if p >= NUM_PIECES {
+			break;
+		}
+
+		res[p] = (MG_MATERIAL_WEIGHTS[p] * 4 + EG_MATERIAL_WEIGHTS[p]) / 5;
+		p += 1;
+	}
+	res
+};
 
 const MG_PAWN_TABLE: [i32; 64] = [
 	0, 0, 0, 0, 0, 0, 0, 0, 98, 134, 61, 95, 68, 126, 34, -11, -6, 7, 26, 31, 65, 56, 25, -20, -14,
@@ -102,7 +115,7 @@ static EG_PSTS: [[i32; 64]; 6] = [
 const GAMEPHASE_INCREMENTS: [u8; 6] = [0, 1, 1, 2, 4, 0];
 
 impl Board {
-	pub(crate) fn init_evaluation(&mut self) {
+	pub(super) fn init_evaluation(&mut self) {
 		for piece in PIECES {
 			let mut w_bb = self.pieces[WHITE as usize][piece as usize];
 			let mut b_bb = self.pieces[BLACK as usize][piece as usize];
@@ -134,7 +147,7 @@ impl Board {
 	}
 
 	#[inline(always)]
-	pub(crate) fn evaluation_add_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
+	pub(super) fn evaluation_add_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {
 			Color::White => {
@@ -156,7 +169,7 @@ impl Board {
 	}
 
 	#[inline(always)]
-	pub(crate) fn evaluation_remove_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
+	pub(super) fn evaluation_remove_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {
 			Color::White => {
@@ -178,7 +191,7 @@ impl Board {
 	}
 
 	#[inline(always)]
-	pub(crate) fn evaluation_move_piece(&mut self, from: u8, to: u8, piece_color: PieceColorPair) {
+	pub(super) fn evaluation_move_piece(&mut self, from: u8, to: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {
 			Color::White => {

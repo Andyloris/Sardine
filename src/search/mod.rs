@@ -8,8 +8,7 @@ use crate::{
 		movegen::{Move, MoveList},
 		utils::{BLACK, Color, WHITE},
 	},
-	eval,
-	search::move_ordering::OrderedMoveList,
+	search::move_ordering::{OrderedMoveList, StagedMoveList},
 	tt::{ScoreType, TT},
 };
 
@@ -109,6 +108,7 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
+		// We don't use TT in the quiescence search, so staged movegen is useless
 		let mut ordered_move_list =
 			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
 
@@ -208,11 +208,10 @@ impl<'a> SearchCtx<'a> {
 		}
 		let hash_move = entry.map(|e| e.best_move);
 
-		let mut move_list = MoveList::default();
-
-		let in_check = self
-			.board
-			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
+		let in_check = match self.board.get_turn() {
+			Color::White => self.board.is_in_check::<WHITE>(),
+			Color::Black => self.board.is_in_check::<BLACK>(),
+		};
 		// NMP
 		{
 			let r = 2 + depth / 6;
@@ -237,13 +236,18 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
-		let mut ordered_move_list =
-			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
+		let mut ordered_move_list = match self.board.get_turn() {
+			Color::White => StagedMoveList::new::<WHITE>(hash_move, &self.board, false),
+			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
+		};
 
 		let mut best_value = -999999;
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
-		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+		while let Some(m) = match self.board.get_turn() {
+			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board),
+		} {
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
 				Color::White => self.board.do_move::<WHITE>(m),
@@ -371,13 +375,18 @@ impl<'a> SearchCtx<'a> {
 		self.board
 			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
 
-		let mut ordered_move_list =
-			OrderedMoveList::from_move_list(&self.board, &mut move_list, hash_move);
+		let mut ordered_move_list = match self.board.get_turn() {
+			Color::White => StagedMoveList::new::<WHITE>(hash_move, &self.board, false),
+			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
+		};
 
 		let mut best_value = -999999;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+		while let Some(m) = match self.board.get_turn() {
+			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board),
+		} {
 			//for m in move_list.iter() {
 			self.check_counter += 1;
 
