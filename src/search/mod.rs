@@ -8,7 +8,7 @@ use crate::{
 		movegen::{Move, MoveList},
 		utils::{BLACK, Color, WHITE},
 	},
-	search::move_ordering::{OrderedMoveList, StagedMoveList},
+	search::move_ordering::{MoveListStages, OrderedMoveList, StagedMoveList},
 	tt::{ScoreType, TT},
 };
 
@@ -28,6 +28,7 @@ pub struct SearchCtx<'a> {
 	check_counter: usize,
 	stop_search: bool,
 	nodes: u64,
+	history: [[[i16; 64]; 64]; 2],
 }
 
 impl<'a> SearchCtx<'a> {
@@ -41,6 +42,7 @@ impl<'a> SearchCtx<'a> {
 			check_counter: 0,
 			stop_search: false,
 			nodes: 0,
+			history: [[[0; 64]; 64]; 2],
 		}
 	}
 
@@ -241,17 +243,21 @@ impl<'a> SearchCtx<'a> {
 			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
 		};
 
+		let mut searched_quiets = MoveList::default();
+
 		let mut best_value = -999999;
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board),
-		} {
+			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history)),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history)),
+		}
+		.copied()
+		{
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
-				Color::White => self.board.do_move::<WHITE>(m),
-				Color::Black => self.board.do_move::<BLACK>(m),
+				Color::White => self.board.do_move::<WHITE>(&m),
+				Color::Black => self.board.do_move::<BLACK>(&m),
 			}
 			.unwrap();
 
@@ -260,8 +266,8 @@ impl<'a> SearchCtx<'a> {
 				Color::Black => self.board.is_in_check::<WHITE>(),
 			} {
 				match self.board.get_turn() {
-					Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-					Color::White => self.board.undo_move::<BLACK>(undo_info, m),
+					Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
+					Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
 				};
 				continue;
 			}
@@ -290,15 +296,15 @@ impl<'a> SearchCtx<'a> {
 			num_legal_moves += 1;
 
 			match self.board.get_turn() {
-				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-				Color::White => self.board.undo_move::<BLACK>(undo_info, m),
+				Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
+				Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
 			}
 			.unwrap();
 
 			// fail-soft
 			if score > best_value {
 				best_value = score;
-				best_move = *m;
+				best_move = m;
 			}
 
 			if score >= alpha {
@@ -306,7 +312,47 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			if alpha >= beta {
+				if ordered_move_list.stage() == MoveListStages::Quiets {
+					let bonus = depth * depth;
+					for quiet in searched_quiets.iter() {
+						let (from, to, _) = quiet.unpack();
+						match self.board.get_turn() {
+							Color::White => move_ordering::update_history::<WHITE>(
+								&mut self.history,
+								from,
+								to,
+								-(bonus as i16),
+							),
+							Color::Black => move_ordering::update_history::<BLACK>(
+								&mut self.history,
+								from,
+								to,
+								-(bonus as i16),
+							),
+						}
+					}
+
+					let (from, to, _) = m.unpack();
+					match self.board.get_turn() {
+						Color::White => move_ordering::update_history::<WHITE>(
+							&mut self.history,
+							from,
+							to,
+							bonus as i16,
+						),
+						Color::Black => move_ordering::update_history::<BLACK>(
+							&mut self.history,
+							from,
+							to,
+							bonus as i16,
+						),
+					}
+				}
 				break; // Beta-cutoff
+			}
+
+			if ordered_move_list.stage() == MoveListStages::Quiets {
+				searched_quiets.push(m);
 			}
 		}
 
@@ -384,8 +430,8 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board),
+			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history)),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history)),
 		} {
 			//for m in move_list.iter() {
 			self.check_counter += 1;

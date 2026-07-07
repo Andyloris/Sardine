@@ -37,11 +37,8 @@ static MVV_LVA_LOOKUP: [[i32; NUM_PIECES]; NUM_PIECES] = {
 	table
 };
 
-// ToDo: Staged move generation with pseudo-legal checking for the hash move
-
-#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MoveListStages {
+pub enum MoveListStages {
 	HashMove = 0,
 	WinningCaptures = 1,
 	Quiets = 2,
@@ -104,16 +101,22 @@ impl StagedMoveList {
 		res
 	}
 
-	fn score_move<const C: u8>(board: &Board, m: &Move) -> i32 {
+	fn score_move<const C: u8>(
+		&self,
+		board: &Board,
+		m: &Move,
+		history: Option<&[[[i16; 64]; 64]; 2]>,
+	) -> i32 {
 		let (from, to, flags) = m.unpack();
+		if flags == MoveFlag::EpCaptures {
+			return MVV_LVA_LOOKUP[Piece::Pawn as usize][Piece::Pawn as usize];
+		}
 
-		match flags {
-			MoveFlag::Captures
-			| MoveFlag::KnightPromoCapture
-			| MoveFlag::BishopPromoCapture
-			| MoveFlag::RookPromoCapture
-			| MoveFlag::QueenPromoCapture => {
+		match self.cur_stage {
+			MoveListStages::HashMove => i32::MAX - 1,
+			MoveListStages::WinningCaptures => {
 				let from = board.get_piece_at_square::<C>(from).unwrap();
+				// Not E.P. thanks to short-circuit above. So we must have a victim on the to square
 				let victim = match C ^ 1 {
 					WHITE => board.get_piece_at_square::<WHITE>(to).unwrap(),
 					BLACK => board.get_piece_at_square::<BLACK>(to).unwrap(),
@@ -123,11 +126,23 @@ impl StagedMoveList {
 				MVV_LVA_LOOKUP[from as usize][victim as usize]
 			}
 
-			_ => 0,
+			MoveListStages::Quiets => {
+				if let Some(history) = history {
+					history[C as usize][from as usize][to as usize] as i32
+				} else {
+					0
+				}
+			}
+
+			MoveListStages::Finished | MoveListStages::LosingCaptures => 0,
 		}
 	}
 
-	pub fn pick_move<const C: u8>(&mut self, board: &Board) -> Option<&Move> {
+	pub fn pick_move<const C: u8>(
+		&mut self,
+		board: &Board,
+		history: Option<&[[[i16; 64]; 64]; 2]>,
+	) -> Option<&Move> {
 		if self.cur_stage == MoveListStages::Finished {
 			return None;
 		}
@@ -138,20 +153,22 @@ impl StagedMoveList {
 				self.cur_stage = self.cur_stage.next();
 			}
 
+			let old_list_len = self.cur_move_list.len();
 			self.cur_stage
 				.gen_moves::<C>(board, &mut self.cur_move_list);
-			for i in self.current_move_idx..self.cur_move_list.len() {
+
+			for i in old_list_len..self.cur_move_list.len() {
 				self.scores[i] = match board.get_turn() {
 					Color::White => {
-						Self::score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i])
+						self.score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i], history)
 					}
 					Color::Black => {
-						Self::score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i])
+						self.score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i], history)
 					}
 				};
 			}
 
-			return self.pick_move::<C>(board);
+			return self.pick_move::<C>(board, history);
 		}
 
 		let mut best_move_idx = self.current_move_idx;
@@ -169,7 +186,7 @@ impl StagedMoveList {
 			self.cur_stage = self.cur_stage.next();
 			if self.only_captures && self.cur_stage == MoveListStages::Quiets {
 				self.cur_stage = self.cur_stage.next();
-				return self.pick_move::<C>(board);
+				return self.pick_move::<C>(board, history);
 			}
 
 			// Only rescore quiets
@@ -180,15 +197,15 @@ impl StagedMoveList {
 			for i in old_list_len..self.cur_move_list.len() {
 				self.scores[i] = match board.get_turn() {
 					Color::White => {
-						Self::score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i])
+						self.score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i], history)
 					}
 					Color::Black => {
-						Self::score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i])
+						self.score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i], history)
 					}
 				};
 			}
 
-			return self.pick_move::<C>(board);
+			return self.pick_move::<C>(board, history);
 		}
 
 		self.cur_move_list
@@ -201,10 +218,14 @@ impl StagedMoveList {
 			&& let Some(hash_move) = self.hash_move
 			&& hash_move == m
 		{
-			return self.pick_move::<C>(board);
+			return self.pick_move::<C>(board, history);
 		}
 
 		Some(&self.cur_move_list.as_slice()[self.current_move_idx - 1])
+	}
+
+	pub fn stage(&self) -> MoveListStages {
+		self.cur_stage
 	}
 }
 
@@ -285,4 +306,18 @@ impl<'a> OrderedMoveList<'a> {
 		self.current_move_idx += 1;
 		Some(&self.moves[self.current_move_idx - 1])
 	}
+}
+
+const MAX_HISTORY: i16 = 24576;
+
+#[inline(always)]
+pub fn update_history<const C: u8>(
+	history: &mut [[[i16; 64]; 64]; 2],
+	from: u8,
+	to: u8,
+	bonus: i16,
+) {
+	let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
+	let history_val = &mut history[C as usize][from as usize][to as usize];
+	*history_val = clamped_bonus - *history_val * clamped_bonus.abs() / MAX_HISTORY;
 }
