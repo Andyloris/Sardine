@@ -272,13 +272,24 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			let mut r: i16 = 1;
+			// Late move reductions (LMR)
+			if (depth >= 3) && (num_legal_moves > 0) {
+				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i16;
+			}
+
 			// ToDo: Implementation leaves board messed up after quitting search when timing out
 			let mut score: i32;
 			if num_legal_moves == 0 {
-				score = -self.negamax::<NODE_TYPE>(depth - 1, ply_from_root + 1, -beta, -alpha)?;
+				score = -self.negamax::<NODE_TYPE>(
+					depth.saturating_sub_signed(r),
+					ply_from_root + 1,
+					-beta,
+					-alpha,
+				)?;
 			} else {
 				score = -self.negamax::<{ node_types::NON_PV }>(
-					depth - 1,
+					depth.saturating_sub_signed(r),
 					ply_from_root + 1,
 					-alpha - 1,
 					-alpha,
