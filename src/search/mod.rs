@@ -29,6 +29,7 @@ pub struct SearchCtx<'a> {
 	stop_search: bool,
 	nodes: u64,
 	history: [[[i16; 64]; 64]; 2],
+	killers: [[Move; 2]; 256],
 }
 
 impl<'a> SearchCtx<'a> {
@@ -43,6 +44,7 @@ impl<'a> SearchCtx<'a> {
 			stop_search: false,
 			nodes: 0,
 			history: [[[0; 64]; 64]; 2],
+			killers: [[Move::default(); 2]; 256],
 		}
 	}
 
@@ -249,8 +251,16 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history)),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history)),
+			Color::White => ordered_move_list.pick_move::<WHITE>(
+				&self.board,
+				Some(&self.history),
+				Some(&self.killers[ply_from_root as usize]),
+			),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(
+				&self.board,
+				Some(&self.history),
+				Some(&self.killers[ply_from_root as usize]),
+			),
 		}
 		.copied()
 		{
@@ -324,6 +334,10 @@ impl<'a> SearchCtx<'a> {
 
 			if alpha >= beta {
 				if ordered_move_list.stage() == MoveListStages::Quiets {
+					self.killers[ply_from_root as usize][1] =
+						self.killers[ply_from_root as usize][0];
+					self.killers[ply_from_root as usize][0] = m;
+
 					let bonus = depth * depth;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
@@ -441,8 +455,12 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history)),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history)),
+			Color::White => {
+				ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history), None)
+			}
+			Color::Black => {
+				ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history), None)
+			}
 		} {
 			//for m in move_list.iter() {
 			self.check_counter += 1;

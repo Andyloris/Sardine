@@ -42,8 +42,7 @@ pub enum MoveListStages {
 	HashMove = 0,
 	WinningCaptures = 1,
 	Quiets = 2,
-	LosingCaptures = 3,
-	Finished = 4,
+	Finished = 3,
 }
 
 impl MoveListStages {
@@ -52,8 +51,7 @@ impl MoveListStages {
 		match self {
 			Self::HashMove => Self::WinningCaptures,
 			Self::WinningCaptures => Self::Quiets,
-			Self::Quiets => Self::LosingCaptures,
-			Self::LosingCaptures => Self::Finished,
+			Self::Quiets => Self::Finished,
 			Self::Finished => Self::Finished,
 		}
 	}
@@ -106,6 +104,7 @@ impl StagedMoveList {
 		board: &Board,
 		m: &Move,
 		history: Option<&[[[i16; 64]; 64]; 2]>,
+		killers: Option<&[Move; 2]>,
 	) -> i32 {
 		let (from, to, flags) = m.unpack();
 		if flags == MoveFlag::EpCaptures {
@@ -127,14 +126,21 @@ impl StagedMoveList {
 			}
 
 			MoveListStages::Quiets => {
-				if let Some(history) = history {
-					history[C as usize][from as usize][to as usize] as i32
-				} else {
-					0
+				let mut score = 0;
+				if let Some(killers) = killers {
+					if *m == killers[0] || *m == killers[1] {
+						score += 1000000;
+					}
 				}
+
+				if let Some(history) = history {
+					score += history[C as usize][from as usize][to as usize] as i32;
+				}
+
+				score
 			}
 
-			MoveListStages::Finished | MoveListStages::LosingCaptures => 0,
+			MoveListStages::Finished => 0,
 		}
 	}
 
@@ -142,6 +148,7 @@ impl StagedMoveList {
 		&mut self,
 		board: &Board,
 		history: Option<&[[[i16; 64]; 64]; 2]>,
+		killers: Option<&[Move; 2]>,
 	) -> Option<&Move> {
 		if self.cur_stage == MoveListStages::Finished {
 			return None;
@@ -159,16 +166,22 @@ impl StagedMoveList {
 
 			for i in old_list_len..self.cur_move_list.len() {
 				self.scores[i] = match board.get_turn() {
-					Color::White => {
-						self.score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i], history)
-					}
-					Color::Black => {
-						self.score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i], history)
-					}
+					Color::White => self.score_move::<WHITE>(
+						board,
+						&self.cur_move_list.as_slice()[i],
+						history,
+						killers,
+					),
+					Color::Black => self.score_move::<BLACK>(
+						board,
+						&self.cur_move_list.as_slice()[i],
+						history,
+						killers,
+					),
 				};
 			}
 
-			return self.pick_move::<C>(board, history);
+			return self.pick_move::<C>(board, history, killers);
 		}
 
 		let mut best_move_idx = self.current_move_idx;
@@ -181,33 +194,6 @@ impl StagedMoveList {
 			}
 		}
 
-		// Sort quiet moves before losing captures
-		if (self.cur_stage == MoveListStages::WinningCaptures) && (best_score < 0) {
-			self.cur_stage = self.cur_stage.next();
-			if self.only_captures && self.cur_stage == MoveListStages::Quiets {
-				self.cur_stage = self.cur_stage.next();
-				return self.pick_move::<C>(board, history);
-			}
-
-			// Only rescore quiets
-			let old_list_len = self.cur_move_list.len();
-			self.cur_stage
-				.gen_moves::<C>(board, &mut self.cur_move_list);
-
-			for i in old_list_len..self.cur_move_list.len() {
-				self.scores[i] = match board.get_turn() {
-					Color::White => {
-						self.score_move::<WHITE>(board, &self.cur_move_list.as_slice()[i], history)
-					}
-					Color::Black => {
-						self.score_move::<BLACK>(board, &self.cur_move_list.as_slice()[i], history)
-					}
-				};
-			}
-
-			return self.pick_move::<C>(board, history);
-		}
-
 		self.cur_move_list
 			.as_mut_slice()
 			.swap(self.current_move_idx, best_move_idx);
@@ -218,7 +204,7 @@ impl StagedMoveList {
 			&& let Some(hash_move) = self.hash_move
 			&& hash_move == m
 		{
-			return self.pick_move::<C>(board, history);
+			return self.pick_move::<C>(board, history, killers);
 		}
 
 		Some(&self.cur_move_list.as_slice()[self.current_move_idx - 1])
