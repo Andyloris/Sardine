@@ -106,6 +106,21 @@ impl Move {
 				| MoveFlag::QueenPromotion
 		)
 	}
+
+	#[inline(always)]
+	pub fn is_promotion(self) -> bool {
+		matches!(
+			self.get_flags(),
+			MoveFlag::KnightPromotion
+				| MoveFlag::BishopPromotion
+				| MoveFlag::RookPromotion
+				| MoveFlag::QueenPromotion
+				| MoveFlag::KnightPromoCapture
+				| MoveFlag::BishopPromoCapture
+				| MoveFlag::RookPromoCapture
+				| MoveFlag::QueenPromoCapture
+		)
+	}
 }
 
 impl Display for Move {

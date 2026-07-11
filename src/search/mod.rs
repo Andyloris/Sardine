@@ -333,7 +333,7 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			if alpha >= beta {
-				if ordered_move_list.stage() == MoveListStages::Quiets {
+				if ordered_move_list.stage() == MoveListStages::Quiets && !m.is_promotion() {
 					self.killers[ply_from_root as usize][1] =
 						self.killers[ply_from_root as usize][0];
 					self.killers[ply_from_root as usize][0] = m;

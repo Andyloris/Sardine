@@ -127,6 +127,10 @@ impl StagedMoveList {
 
 			MoveListStages::Quiets => {
 				let mut score = 0;
+				if m.is_promotion() {
+					score += 1000000;
+				}
+
 				if let Some(killers) = killers {
 					if *m == killers[0] || *m == killers[1] {
 						score += 1000000;

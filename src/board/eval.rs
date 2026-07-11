@@ -1,10 +1,11 @@
 use crate::board::{
 	Board,
-	utils::{BLACK, Color, NUM_PIECES, PIECES, PieceColorPair, WHITE, clear_lsb},
+	attacks::{get_king_attacks, get_knight_attacks, get_pawn_attacks, get_sliding_attacks},
+	utils::{BLACK, Color, NUM_PIECES, PIECES, Piece, PieceColorPair, WHITE, clear_lsb},
 };
 
-const MG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [82, 337, 365, 477, 1025, 20000];
-const EG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [94, 281, 297, 512, 936, 20000];
+const MG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [82, 337, 365, 477, 1025, 0];
+const EG_MATERIAL_WEIGHTS: [i32; NUM_PIECES] = [94, 281, 297, 512, 936, 0];
 
 pub const MATERIAL_WEIGHTS: [i32; NUM_PIECES] = {
 	let mut res: [i32; NUM_PIECES] = [0; NUM_PIECES];
@@ -219,5 +220,76 @@ impl Board {
 		(mg_weight * (self.mg_pst_values + self.mg_material_score)
 			+ eg_weight * (self.eg_pst_values + self.eg_material_score))
 			/ 24
+	}
+
+	// SEE stuff from https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
+	pub fn attacks_to_square_with_occ<const BY: u8>(&self, sq: u8, occ: &u64) -> u64 {
+		let mut attackers = 0;
+		let pawns = self.pieces[BY as usize][Piece::Pawn as usize];
+		attackers |= match BY ^ 1 {
+			WHITE => get_pawn_attacks::<WHITE>(sq) & pawns,
+			BLACK => get_pawn_attacks::<BLACK>(sq) & pawns,
+			_ => 0,
+		};
+
+		let knights = self.pieces[BY as usize][Piece::Knight as usize];
+		attackers |= get_knight_attacks(sq) & knights;
+
+		let king = self.pieces[BY as usize][Piece::King as usize];
+		attackers |= get_king_attacks(sq) & king;
+
+		let bishops_queens = self.pieces[BY as usize][Piece::Bishop as usize]
+			| self.pieces[BY as usize][Piece::Queen as usize];
+		attackers |= get_sliding_attacks::<true>(sq, *occ) & bishops_queens;
+
+		let rooks_queens = self.pieces[BY as usize][Piece::Rook as usize]
+			| self.pieces[BY as usize][Piece::Queen as usize];
+		attackers |= get_sliding_attacks::<false>(sq, *occ) & rooks_queens;
+
+		attackers
+	}
+
+	fn get_least_valuable_piece(&self, attadef: u64, by_side: Color, out_piece: &mut Piece) -> u64 {
+		for piece in PIECES {
+			let subset = attadef & self.pieces[by_side as usize][piece as usize];
+			if subset != 0 {
+				*out_piece = piece;
+				return subset & subset.wrapping_neg();
+			}
+		}
+
+		0
+	}
+
+	pub fn see(&self, from: u8, to: u8, target: Piece, mut a_piece: Piece) -> i32 {
+		let mut gain: [i32; 32] = [0; 32];
+		let mut depth = 0;
+		let mut from_set = 1u64 << from;
+		let mut occ = self.occupied;
+		gain[0] = MATERIAL_WEIGHTS[target as usize];
+		let mut attadef;
+
+		loop {
+			depth += 1;
+			gain[depth] = MATERIAL_WEIGHTS[a_piece as usize] - gain[depth - 1];
+			occ ^= from_set;
+			if depth % 2 == 0 {
+				attadef = self.attacks_to_square_with_occ::<WHITE>(to, &occ) & occ;
+				from_set = self.get_least_valuable_piece(attadef, Color::White, &mut a_piece);
+			} else {
+				attadef = self.attacks_to_square_with_occ::<BLACK>(to, &occ) & occ;
+				from_set = self.get_least_valuable_piece(attadef, Color::Black, &mut a_piece);
+			}
+
+			if from_set == 0 {
+				break;
+			}
+		}
+
+		for d in (1..depth).rev() {
+			gain[d - 1] = -(gain[d].max(-gain[d - 1]));
+		}
+
+		gain[0]
 	}
 }
