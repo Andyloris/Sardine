@@ -218,16 +218,17 @@ impl<'a> SearchCtx<'a> {
 		};
 		// NMP
 		{
-			let r = 2 + depth / 6;
+			let r = 3 + depth / 3;
 			if !in_check
-				&& depth > r && match self.board.get_turn() {
-				Color::White => self.board.has_non_pawn_material::<WHITE>(),
-				Color::Black => self.board.has_non_pawn_material::<BLACK>(),
-			} && NODE_TYPE == node_types::NON_PV
+				&& depth >= 2
+				&& match self.board.get_turn() {
+					Color::White => self.board.has_non_pawn_material::<WHITE>(),
+					Color::Black => self.board.has_non_pawn_material::<BLACK>(),
+				} && NODE_TYPE == node_types::NON_PV
 			{
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::NON_PV }>(
-					depth - 1 - r,
+					depth.saturating_sub(r),
 					ply_from_root + 1,
 					-beta,
 					-beta + 1,
@@ -333,7 +334,7 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			if alpha >= beta {
-				if ordered_move_list.stage() == MoveListStages::Quiets && !m.is_promotion() {
+				if m.is_quiet() && !m.is_promotion() {
 					self.killers[ply_from_root as usize][1] =
 						self.killers[ply_from_root as usize][0];
 					self.killers[ply_from_root as usize][0] = m;
@@ -376,7 +377,7 @@ impl<'a> SearchCtx<'a> {
 				break; // Beta-cutoff
 			}
 
-			if ordered_move_list.stage() == MoveListStages::Quiets {
+			if m.is_quiet() {
 				searched_quiets.push(m);
 			}
 		}
