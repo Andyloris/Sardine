@@ -339,7 +339,7 @@ impl<'a> SearchCtx<'a> {
 						self.killers[ply_from_root as usize][0];
 					self.killers[ply_from_root as usize][0] = m;
 
-					let bonus = depth * depth;
+					let bonus = 16 * depth * depth;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
 						match self.board.get_turn() {
