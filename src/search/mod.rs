@@ -549,12 +549,30 @@ impl<'a> SearchCtx<'a> {
 		self.search_start = Instant::now();
 		self.nodes = 0;
 
-		for d in 1..=self.max_depth.max(1) {
-			let cur_best_info = self.bestmove(d, -999999999, 999999999);
+		let mut alpha = -999999999;
+		let mut beta = 999999999;
+		let mut d = 1;
+
+		loop {
+			if d >= self.max_depth.max(1) {
+				break;
+			}
+
+			let cur_best_info = self.bestmove(d, alpha, beta);
 			if self.stop_search {
 				break;
 			}
 			best_info = cur_best_info.unwrap();
+			let score = best_info.1;
+
+			if score <= alpha || score >= beta {
+				alpha = -999999999;
+				beta = 999999999;
+			} else {
+				d += 1;
+				alpha = best_info.1 - 50;
+				beta = best_info.1 + 50;
+			}
 		}
 
 		println!("bestmove {}", best_info.0);
