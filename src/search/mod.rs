@@ -19,6 +19,11 @@ mod node_types {
 	pub const PV: u8 = 1;
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct StackElem {
+	pub in_check: bool,
+}
+
 pub struct SearchCtx<'a> {
 	tt: &'a mut TT,
 	board: Board,
@@ -30,6 +35,7 @@ pub struct SearchCtx<'a> {
 	nodes: u64,
 	history: [[[i16; 64]; 64]; 2],
 	killers: [[Move; 2]; 256],
+	stack: [StackElem; 256],
 }
 
 impl<'a> SearchCtx<'a> {
@@ -45,6 +51,7 @@ impl<'a> SearchCtx<'a> {
 			nodes: 0,
 			history: [[[0; 64]; 64]; 2],
 			killers: [[Move::default(); 2]; 256],
+			stack: core::array::from_fn(|_| Default::default()),
 		}
 	}
 
@@ -172,7 +179,7 @@ impl<'a> SearchCtx<'a> {
 		depth: u16,
 		ply_from_root: u16,
 		mut alpha: i32,
-		beta: i32,
+		mut beta: i32,
 	) -> Option<i32> {
 		let alpha_orig = alpha;
 		self.check_counter += 1;
@@ -200,15 +207,33 @@ impl<'a> SearchCtx<'a> {
 		self.nodes += 1;
 
 		let entry = self.tt.probe(&self.board);
-		if let Some(entry) = entry {
-			if entry.depth >= depth as i16 {
-				match entry.score {
-					ScoreType::Exact(v) => return Some(v),
-					ScoreType::Lower(v) if v >= beta => return Some(v),
-					ScoreType::Upper(v) if v <= alpha => return Some(v),
-					_ => {}
-				};
-			}
+		if let Some(entry) = entry
+			&& entry.depth >= depth as i16
+		{
+			match entry.score {
+				ScoreType::Exact(v) => {
+					return if Self::is_mating_value(v) {
+						Some((v.abs() - ply_from_root as i32) * v.signum())
+					} else {
+						Some(v)
+					};
+				}
+				ScoreType::Lower(v) if v >= beta => {
+					return if Self::is_mating_value(v) {
+						Some((v.abs() - ply_from_root as i32) * v.signum())
+					} else {
+						Some(v)
+					};
+				}
+				ScoreType::Upper(v) if v <= alpha => {
+					return if Self::is_mating_value(v) {
+						Some((v.abs() - ply_from_root as i32) * v.signum())
+					} else {
+						Some(v)
+					};
+				}
+				_ => {}
+			};
 		}
 		let hash_move = entry.map(|e| e.best_move);
 
@@ -216,6 +241,15 @@ impl<'a> SearchCtx<'a> {
 			Color::White => self.board.is_in_check::<WHITE>(),
 			Color::Black => self.board.is_in_check::<BLACK>(),
 		};
+		self.stack[ply_from_root as usize] = StackElem { in_check };
+
+		// MDP
+		alpha = alpha.max(-99999 + ply_from_root as i32);
+		beta = beta.min(99999 - ply_from_root as i32);
+		if alpha >= beta {
+			return Some(alpha);
+		}
+
 		// NMP
 		{
 			let r = 3 + depth / 3;
@@ -408,37 +442,53 @@ impl<'a> SearchCtx<'a> {
 		Some(best_value)
 	}
 
+	fn is_mating_value(v: i32) -> bool {
+		(99999 - v.abs()) <= 256
+	}
+
+	fn get_dtm_from_score(v: i32) -> i32 {
+		(99999 - v.abs()) / 2
+	}
+
+	fn uci_print_score(score: i32, depth: u16, best_move: Move, nodes: u64) {
+		if Self::is_mating_value(score) {
+			let dtm = Self::get_dtm_from_score(score) * score.signum();
+			println!(
+				"info depth {} score mate {} pv {} nodes {}",
+				depth, dtm, best_move, nodes
+			);
+			return;
+		}
+
+		println!(
+			"info depth {} score cp {} pv {} nodes {}",
+			depth, score, best_move, nodes
+		);
+	}
+
 	fn bestmove(&mut self, depth: u16, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
 		let alpha_orig = alpha;
 
 		let entry = self.tt.probe(&self.board);
-		if let Some(entry) = entry {
-			if entry.depth >= depth as i16 {
-				match entry.score {
-					ScoreType::Exact(v) => {
-						println!(
-							"info depth {} score cp {} pv {} nodes {}",
-							depth, v, entry.best_move, self.nodes
-						);
-						return Some((entry.best_move, v));
-					}
-					ScoreType::Lower(v) if v >= beta => {
-						println!(
-							"info depth {} score cp {} pv {} nodes {}",
-							depth, v, entry.best_move, self.nodes
-						);
-						return Some((entry.best_move, v));
-					}
-					ScoreType::Upper(v) if v <= alpha => {
-						println!(
-							"info depth {} score cp {} pv {} nodes {}",
-							depth, v, entry.best_move, self.nodes
-						);
-						return Some((entry.best_move, v));
-					}
-					_ => {}
-				};
-			}
+		if let Some(entry) = entry
+			&& entry.depth >= depth as i16
+		{
+			// No adjustment for mate scores since ply from root == 0
+			match entry.score {
+				ScoreType::Exact(v) => {
+					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
+					return Some((entry.best_move, v));
+				}
+				ScoreType::Lower(v) if v >= beta => {
+					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
+					return Some((entry.best_move, v));
+				}
+				ScoreType::Upper(v) if v <= alpha => {
+					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
+					return Some((entry.best_move, v));
+				}
+				_ => {}
+			};
 		}
 		let hash_move = entry.map(|e| e.best_move);
 
@@ -524,10 +574,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if !self.stop_search {
-			println!(
-				"info depth {} score cp {} pv {} nodes {}",
-				depth, best_value, best_move, self.nodes
-			);
+			Self::uci_print_score(best_value, depth, best_move, self.nodes);
 
 			let tt_score = if best_value < alpha_orig {
 				ScoreType::Upper(best_value)
