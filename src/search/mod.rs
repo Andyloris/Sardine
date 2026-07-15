@@ -15,8 +15,9 @@ use crate::{
 const TIMER_CHECK_INTERVAL: usize = 4096;
 
 mod node_types {
-	pub const NON_PV: u8 = 0;
-	pub const PV: u8 = 1;
+	pub const CUT: u8 = 0;
+	pub const ALL: u8 = 1;
+	pub const PV: u8 = 2;
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -258,10 +259,10 @@ impl<'a> SearchCtx<'a> {
 				&& match self.board.get_turn() {
 					Color::White => self.board.has_non_pawn_material::<WHITE>(),
 					Color::Black => self.board.has_non_pawn_material::<BLACK>(),
-				} && NODE_TYPE == node_types::NON_PV
+				} && NODE_TYPE == node_types::CUT
 			{
 				let undo_info = self.board.do_null_move();
-				let score = -self.negamax::<{ node_types::NON_PV }>(
+				let score = -self.negamax::<{ node_types::CUT }>(
 					depth.saturating_sub(r),
 					ply_from_root + 1,
 					-beta,
@@ -326,14 +327,34 @@ impl<'a> SearchCtx<'a> {
 			// ToDo: Implementation leaves board messed up after quitting search when timing out
 			let mut score: i32;
 			if num_legal_moves == 0 {
-				score = -self.negamax::<NODE_TYPE>(
-					depth.saturating_sub_signed(r),
-					ply_from_root + 1,
-					-beta,
-					-alpha,
-				)?;
+				match NODE_TYPE {
+					node_types::CUT => {
+						score = -self.negamax::<{ node_types::ALL }>(
+							depth.saturating_sub_signed(r),
+							ply_from_root + 1,
+							-beta,
+							-alpha,
+						)?
+					}
+					node_types::ALL => {
+						score = -self.negamax::<{ node_types::CUT }>(
+							depth.saturating_sub_signed(r),
+							ply_from_root + 1,
+							-beta,
+							-alpha,
+						)?
+					}
+					_ => {
+						score = -self.negamax::<NODE_TYPE>(
+							depth.saturating_sub_signed(r),
+							ply_from_root + 1,
+							-beta,
+							-alpha,
+						)?
+					}
+				}
 			} else {
-				score = -self.negamax::<{ node_types::NON_PV }>(
+				score = -self.negamax::<{ node_types::CUT }>(
 					depth.saturating_sub_signed(r),
 					ply_from_root + 1,
 					-alpha - 1,
@@ -548,8 +569,7 @@ impl<'a> SearchCtx<'a> {
 			if num_legal_moves == 0 {
 				score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
 			} else {
-				score =
-					-self.negamax::<{ node_types::NON_PV }>(depth - 1, 1, -alpha - 1, -alpha)?;
+				score = -self.negamax::<{ node_types::CUT }>(depth - 1, 1, -alpha - 1, -alpha)?;
 				if score > alpha {
 					score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
 				}
