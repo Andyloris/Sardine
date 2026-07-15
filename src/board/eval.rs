@@ -217,9 +217,11 @@ impl Board {
 		let mg_weight = self.gamephase.min(24) as i32;
 		let eg_weight = 24 - mg_weight;
 
-		(mg_weight * (self.mg_pst_values + self.mg_material_score)
+		// Rounded tapered eval
+		(((mg_weight * (self.mg_pst_values + self.mg_material_score)
 			+ eg_weight * (self.eg_pst_values + self.eg_material_score))
-			/ 24
+			/ 24) / 4)
+			* 4
 	}
 
 	// SEE stuff from https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
