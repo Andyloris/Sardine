@@ -8,7 +8,7 @@ use crate::{
 		movegen::{Move, MoveList},
 		utils::{BLACK, Color, WHITE},
 	},
-	search::move_ordering::{MoveListStages, OrderedMoveList, StagedMoveList},
+	search::move_ordering::{OrderedMoveList, StagedMoveList},
 	tt::{ScoreType, TT},
 };
 
@@ -23,6 +23,7 @@ mod node_types {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct StackElem {
 	pub in_check: bool,
+	pub static_eval: i32,
 }
 
 pub struct SearchCtx<'a> {
@@ -244,7 +245,16 @@ impl<'a> SearchCtx<'a> {
 			Color::White => self.board.is_in_check::<WHITE>(),
 			Color::Black => self.board.is_in_check::<BLACK>(),
 		};
-		self.stack[ply_from_root as usize] = StackElem { in_check };
+		let static_eval = self.board.eval_objective()
+			* match self.board.get_turn() {
+				Color::White => 1,
+				Color::Black => -1,
+			};
+
+		self.stack[ply_from_root as usize] = StackElem {
+			in_check,
+			static_eval,
+		};
 
 		// Check extension
 		if in_check {
@@ -270,6 +280,7 @@ impl<'a> SearchCtx<'a> {
 					Color::White => self.board.has_non_pawn_material::<WHITE>(),
 					Color::Black => self.board.has_non_pawn_material::<BLACK>(),
 				} && NODE_TYPE == node_types::CUT
+				&& static_eval >= beta
 			{
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::CUT }>(
