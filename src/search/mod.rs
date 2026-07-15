@@ -182,17 +182,11 @@ impl<'a> SearchCtx<'a> {
 		mut alpha: i32,
 		mut beta: i32,
 	) -> Option<i32> {
-		let alpha_orig = alpha;
-		let beta_orig = beta;
 		self.check_counter += 1;
 
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
 			return Some(0);
-		}
-
-		if depth == 0 {
-			return self.quiescence_search(ply_from_root, alpha, beta);
 		}
 
 		if !self.stop_search
@@ -239,6 +233,11 @@ impl<'a> SearchCtx<'a> {
 				_ => {}
 			};
 		}
+
+		if depth == 0 {
+			return self.quiescence_search(ply_from_root, alpha, beta);
+		}
+
 		let hash_move = entry.map(|e| e.best_move);
 
 		let in_check = match self.board.get_turn() {
@@ -253,6 +252,9 @@ impl<'a> SearchCtx<'a> {
 		if alpha >= beta {
 			return Some(alpha);
 		}
+
+		let alpha_orig = alpha;
+		let beta_orig = beta;
 
 		// NMP
 		{
