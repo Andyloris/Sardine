@@ -1,10 +1,21 @@
 use crate::board::{Board, movegen::Move};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScoreType {
 	Exact(i32),
 	Upper(i32),
 	Lower(i32),
+}
+
+impl ScoreType {
+	#[inline(always)]
+	pub const fn inner(self) -> i32 {
+		match self {
+			Self::Exact(v) => v,
+			Self::Upper(v) => v,
+			Self::Lower(v) => v,
+		}
+	}
 }
 
 impl Default for ScoreType {

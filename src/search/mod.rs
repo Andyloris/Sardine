@@ -183,6 +183,7 @@ impl<'a> SearchCtx<'a> {
 		mut beta: i32,
 	) -> Option<i32> {
 		let alpha_orig = alpha;
+		let beta_orig = beta;
 		self.check_counter += 1;
 
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
@@ -210,6 +211,8 @@ impl<'a> SearchCtx<'a> {
 		let entry = self.tt.probe(&self.board);
 		if let Some(entry) = entry
 			&& entry.depth >= depth as i16
+			&& (depth == 0 || NODE_TYPE != node_types::PV)
+			&& (NODE_TYPE == node_types::CUT || entry.score.inner() <= alpha)
 		{
 			match entry.score {
 				ScoreType::Exact(v) => {
@@ -451,7 +454,7 @@ impl<'a> SearchCtx<'a> {
 
 		let tt_score = if best_value < alpha_orig {
 			ScoreType::Upper(best_value)
-		} else if best_value >= beta {
+		} else if best_value >= beta_orig {
 			ScoreType::Lower(best_value)
 		} else {
 			ScoreType::Exact(best_value)
@@ -489,10 +492,12 @@ impl<'a> SearchCtx<'a> {
 
 	fn bestmove(&mut self, depth: u16, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
 		let alpha_orig = alpha;
+		let beta_orig = beta;
 
 		let entry = self.tt.probe(&self.board);
 		if let Some(entry) = entry
 			&& entry.depth >= depth as i16
+			&& depth == 0
 		{
 			// No adjustment for mate scores since ply from root == 0
 			match entry.score {
@@ -598,7 +603,7 @@ impl<'a> SearchCtx<'a> {
 
 			let tt_score = if best_value < alpha_orig {
 				ScoreType::Upper(best_value)
-			} else if best_value >= beta {
+			} else if best_value >= beta_orig {
 				ScoreType::Lower(best_value)
 			} else {
 				ScoreType::Exact(best_value)
