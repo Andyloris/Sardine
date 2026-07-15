@@ -177,7 +177,7 @@ impl<'a> SearchCtx<'a> {
 
 	fn negamax<const NODE_TYPE: u8>(
 		&mut self,
-		depth: u16,
+		mut depth: u16,
 		ply_from_root: u16,
 		mut alpha: i32,
 		mut beta: i32,
@@ -245,6 +245,11 @@ impl<'a> SearchCtx<'a> {
 			Color::Black => self.board.is_in_check::<BLACK>(),
 		};
 		self.stack[ply_from_root as usize] = StackElem { in_check };
+
+		// Check extension
+		if in_check {
+			depth += 1;
+		}
 
 		// MDP
 		alpha = alpha.max(-99999 + ply_from_root as i32);
