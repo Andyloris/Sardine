@@ -241,20 +241,14 @@ impl<'a> SearchCtx<'a> {
 
 		let hash_move = entry.map(|e| e.best_move);
 
-		let in_check = match self.board.get_turn() {
-			Color::White => self.board.is_in_check::<WHITE>(),
-			Color::Black => self.board.is_in_check::<BLACK>(),
-		};
+		let in_check = self.stack[ply_from_root as usize].in_check;
 		let static_eval = self.board.eval_objective()
 			* match self.board.get_turn() {
 				Color::White => 1,
 				Color::Black => -1,
 			};
 
-		self.stack[ply_from_root as usize] = StackElem {
-			in_check,
-			static_eval,
-		};
+		self.stack[ply_from_root as usize].static_eval = static_eval;
 
 		// Check extension
 		if in_check {
@@ -282,6 +276,7 @@ impl<'a> SearchCtx<'a> {
 				} && NODE_TYPE == node_types::CUT
 				&& static_eval >= beta
 			{
+				self.stack[ply_from_root as usize + 1].in_check = false;
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::CUT }>(
 					depth.saturating_sub(r),
@@ -338,6 +333,11 @@ impl<'a> SearchCtx<'a> {
 				};
 				continue;
 			}
+			let gives_check = match self.board.get_turn() {
+				Color::White => self.board.is_in_check::<WHITE>(),
+				Color::Black => self.board.is_in_check::<BLACK>(),
+			};
+			self.stack[ply_from_root as usize + 1].in_check = gives_check;
 
 			let mut r: i16 = 1;
 			// Late move reductions (LMR)
@@ -588,6 +588,12 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			let gives_check = match self.board.get_turn() {
+				Color::White => self.board.is_in_check::<WHITE>(),
+				Color::Black => self.board.is_in_check::<BLACK>(),
+			};
+			self.stack[1].in_check = gives_check;
+
 			let mut score: i32;
 			if num_legal_moves == 0 {
 				score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
@@ -652,13 +658,14 @@ impl<'a> SearchCtx<'a> {
 			if self.stop_search {
 				break;
 			}
-			best_info = cur_best_info.unwrap();
-			let score = best_info.1;
+			let cur_best_info = cur_best_info.unwrap();
+			let score = cur_best_info.1;
 
 			if score <= alpha || score >= beta {
 				alpha = -999999999;
 				beta = 999999999;
 			} else {
+				best_info = cur_best_info;
 				d += 1;
 				alpha = best_info.1 - 50;
 				beta = best_info.1 + 50;
