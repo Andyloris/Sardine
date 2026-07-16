@@ -5,8 +5,9 @@ use std::time::Instant;
 use crate::{
 	board::{
 		Board,
+		eval::MATERIAL_WEIGHTS,
 		movegen::{Move, MoveList},
-		utils::{BLACK, Color, WHITE},
+		utils::{BLACK, Color, Piece, WHITE},
 	},
 	search::move_ordering::{OrderedMoveList, StagedMoveList},
 	tt::{ScoreType, TT},
@@ -640,36 +641,41 @@ impl<'a> SearchCtx<'a> {
 		Some((best_move, best_value))
 	}
 
+	fn aspirated_search(&mut self, depth: u16, score: i32) -> Option<(Move, i32)> {
+		let mut alpha_delta = MATERIAL_WEIGHTS[Piece::Pawn as usize] / 4;
+		let mut beta_delta = alpha_delta;
+
+		loop {
+			let search_info = self.bestmove(depth, score - alpha_delta, score + beta_delta)?;
+			if search_info.1 <= score - alpha_delta {
+				alpha_delta *= 4;
+				continue;
+			}
+
+			if search_info.1 >= score + beta_delta {
+				beta_delta *= 4;
+				continue;
+			}
+
+			// No bound failures, return score
+			return Some(search_info);
+		}
+	}
+
 	pub fn search(&mut self) -> (Move, i32) {
-		let mut best_info = (Move::default(), 0);
 		self.search_start = Instant::now();
 		self.nodes = 0;
 
-		let mut alpha = -999999999;
-		let mut beta = 999999999;
-		let mut d = 1;
+		let mut best_info = self
+			.bestmove(1, -999999999, 999999999)
+			.expect("Failed depth 1 search in time");
 
-		loop {
-			if d >= self.max_depth.max(1) {
+		for depth in 2..self.max_depth {
+			let info = self.aspirated_search(depth, best_info.1);
+			if info.is_none() {
 				break;
 			}
-
-			let cur_best_info = self.bestmove(d, alpha, beta);
-			if self.stop_search {
-				break;
-			}
-			let cur_best_info = cur_best_info.unwrap();
-			let score = cur_best_info.1;
-
-			if score <= alpha || score >= beta {
-				alpha = -999999999;
-				beta = 999999999;
-			} else {
-				best_info = cur_best_info;
-				d += 1;
-				alpha = best_info.1 - 50;
-				beta = best_info.1 + 50;
-			}
+			best_info = info.unwrap();
 		}
 
 		println!("bestmove {}", best_info.0);
