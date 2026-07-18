@@ -8,4 +8,5 @@ default = []
 pext_magics = []
 
 [dependencies]
+linkme = "0.3.36"
 shakmaty = "0.30.0"

@@ -3,15 +3,18 @@ use shakmaty::{Chess, Position, fen::Fen};
 use crate::{
 	board::{
 		Board,
+		eval::MATERIAL_WEIGHTS,
 		movegen::{Move, MoveFlag, MoveList, move_gen_stages},
-		utils::{BLACK, Bitboard, Color, Squares, WHITE},
+		utils::{BLACK, Bitboard, Color, Piece, Squares, WHITE},
 	},
+	tuning::{TUNE_PARAMS, print_tune_info},
 	uci::UCIInstance,
 };
 
 mod board;
 mod search;
 mod tt;
+mod tuning;
 mod uci;
 
 fn perft_driver(brd: &mut Board, d: usize) -> u64 {
@@ -249,6 +252,36 @@ fn main() {
 		"rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8  ",
 		5,
 	);*/
+
+	let params = std::env::args().collect::<Vec<String>>();
+
+	let mut expecting_params = false;
+	for p in params {
+		if p == "tunables" {
+			expecting_params = true;
+			continue;
+		}
+
+		if expecting_params {
+			expecting_params = false;
+			// This must be the params, parse them
+			for (cur_param, value) in p.split(',').enumerate() {
+				if value.is_empty() {
+					break;
+				}
+
+				let value: f64 = value.parse::<f64>().expect("Passed invalid param");
+				TUNE_PARAMS[cur_param].set(value);
+			}
+			break;
+		}
+	}
+
+	if expecting_params {
+		// No params passed, print tunables and return
+		print_tune_info();
+		return;
+	}
 
 	let mut uci = UCIInstance::new();
 	uci.run();

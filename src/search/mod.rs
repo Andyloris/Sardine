@@ -5,9 +5,8 @@ use std::time::Instant;
 use crate::{
 	board::{
 		Board,
-		eval::MATERIAL_WEIGHTS,
 		movegen::{Move, MoveList},
-		utils::{BLACK, Color, Piece, WHITE},
+		utils::{BLACK, Color, WHITE},
 	},
 	search::move_ordering::{OrderedMoveList, StagedMoveList},
 	tt::{ScoreType, TT},
@@ -642,18 +641,18 @@ impl<'a> SearchCtx<'a> {
 	}
 
 	fn aspirated_search(&mut self, depth: u16, score: i32) -> Option<(Move, i32)> {
-		let mut alpha_delta = MATERIAL_WEIGHTS[Piece::Pawn as usize] / 4;
+		let mut alpha_delta = 10;
 		let mut beta_delta = alpha_delta;
 
 		loop {
 			let search_info = self.bestmove(depth, score - alpha_delta, score + beta_delta)?;
 			if search_info.1 <= score - alpha_delta {
-				alpha_delta *= 4;
+				alpha_delta = (alpha_delta * 46) / 10;
 				continue;
 			}
 
 			if search_info.1 >= score + beta_delta {
-				beta_delta *= 4;
+				beta_delta = (beta_delta * 46) / 10;
 				continue;
 			}
 
