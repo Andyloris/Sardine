@@ -206,8 +206,8 @@ impl<'a> SearchCtx<'a> {
 
 		self.nodes += 1;
 
-		let entry = self.tt.probe(&self.board);
-		if let Some(entry) = entry
+		let entry = self.tt.probe(&self.board).cloned();
+		if let Some(ref entry) = entry
 			&& entry.depth >= depth as i16
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
 			&& (NODE_TYPE == node_types::CUT || entry.score.inner() <= alpha)
@@ -242,7 +242,7 @@ impl<'a> SearchCtx<'a> {
 			return self.quiescence_search(ply_from_root, alpha, beta);
 		}
 
-		let hash_move = entry.map(|e| e.best_move);
+		let hash_move = entry.as_ref().map(|e| e.best_move);
 
 		let in_check = self.stack[ply_from_root as usize].in_check;
 		let static_eval = self.board.eval_objective()
@@ -304,6 +304,11 @@ impl<'a> SearchCtx<'a> {
 			&& 200 * depth as i32 + static_eval < alpha
 		{
 			futile = true;
+		}
+
+		// Internal iterative reductions
+		if NODE_TYPE != node_types::ALL && depth > 4 && entry.is_none() {
+			depth -= 1;
 		}
 
 		let mut ordered_move_list = match self.board.get_turn() {
