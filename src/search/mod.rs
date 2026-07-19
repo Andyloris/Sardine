@@ -495,19 +495,28 @@ impl<'a> SearchCtx<'a> {
 		(99999 - v.abs()) / 2
 	}
 
-	fn uci_print_score(score: i32, depth: u16, seldepth: u16, best_move: Move, nodes: u64) {
+	fn uci_print_score(
+		score: i32,
+		depth: u16,
+		seldepth: u16,
+		best_move: Move,
+		nodes: u64,
+		search_start: Instant,
+	) {
+		let search_time = search_start.elapsed().as_millis().max(1);
+		let nps = (nodes as u128 * 1000) / search_time;
 		if Self::is_mating_value(score) {
 			let dtm = Self::get_dtm_from_score(score) * score.signum();
 			println!(
-				"info depth {} seldepth {} score mate {} pv {} nodes {}",
-				depth, seldepth, dtm, best_move, nodes
+				"info depth {} seldepth {} score mate {} pv {} nodes {} nps {} time {}",
+				depth, seldepth, dtm, best_move, nodes, nps, search_time
 			);
 			return;
 		}
 
 		println!(
-			"info depth {} seldepth {} score cp {} pv {} nodes {}",
-			depth, seldepth, score, best_move, nodes
+			"info depth {} seldepth {} score cp {} pv {} nodes {} nps {} time {}",
+			depth, seldepth, score, best_move, nodes, nps, search_time
 		);
 	}
 
@@ -676,6 +685,7 @@ impl<'a> SearchCtx<'a> {
 				self.seldepth,
 				search_info.0,
 				self.nodes,
+				self.search_start,
 			);
 			return Some(search_info);
 		}
