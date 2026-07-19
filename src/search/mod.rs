@@ -646,6 +646,7 @@ impl<'a> SearchCtx<'a> {
 		loop {
 			let search_info = self.bestmove(depth, alpha, beta)?;
 			if search_info.1 <= alpha {
+				beta = (alpha + beta) / 2;
 				alpha -= delta;
 				delta *= 2;
 				delta = (delta / 4) * 4;
