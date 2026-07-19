@@ -32,6 +32,7 @@ pub struct SearchCtx<'a> {
 	search_start: Instant,
 	allocated_time_millis: u64,
 	max_depth: u16,
+	seldepth: u16,
 	check_counter: usize,
 	stop_search: bool,
 	nodes: u64,
@@ -48,6 +49,7 @@ impl<'a> SearchCtx<'a> {
 			search_start: Instant::now(),
 			allocated_time_millis: (time / 20 + inc / 2) as u64,
 			max_depth,
+			seldepth: 0,
 			check_counter: 0,
 			stop_search: false,
 			nodes: 0,
@@ -183,6 +185,7 @@ impl<'a> SearchCtx<'a> {
 		mut alpha: i32,
 		mut beta: i32,
 	) -> Option<i32> {
+		self.seldepth = self.seldepth.max(ply_from_root);
 		self.check_counter += 1;
 
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
@@ -492,19 +495,19 @@ impl<'a> SearchCtx<'a> {
 		(99999 - v.abs()) / 2
 	}
 
-	fn uci_print_score(score: i32, depth: u16, best_move: Move, nodes: u64) {
+	fn uci_print_score(score: i32, depth: u16, seldepth: u16, best_move: Move, nodes: u64) {
 		if Self::is_mating_value(score) {
 			let dtm = Self::get_dtm_from_score(score) * score.signum();
 			println!(
-				"info depth {} score mate {} pv {} nodes {}",
-				depth, dtm, best_move, nodes
+				"info depth {} seldepth {} score mate {} pv {} nodes {}",
+				depth, seldepth, dtm, best_move, nodes
 			);
 			return;
 		}
 
 		println!(
-			"info depth {} score cp {} pv {} nodes {}",
-			depth, score, best_move, nodes
+			"info depth {} seldepth {} score cp {} pv {} nodes {}",
+			depth, seldepth, score, best_move, nodes
 		);
 	}
 
@@ -667,7 +670,13 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			// No bound failures, return score and report to user
-			Self::uci_print_score(search_info.1, depth, search_info.0, self.nodes);
+			Self::uci_print_score(
+				search_info.1,
+				depth,
+				self.seldepth,
+				search_info.0,
+				self.nodes,
+			);
 			return Some(search_info);
 		}
 	}
@@ -675,6 +684,7 @@ impl<'a> SearchCtx<'a> {
 	pub fn search(&mut self) -> (Move, i32) {
 		self.search_start = Instant::now();
 		self.nodes = 0;
+		self.seldepth = 0;
 
 		let mut best_info = self
 			.bestmove(1, -999999999, 999999999)
