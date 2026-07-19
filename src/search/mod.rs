@@ -268,6 +268,11 @@ impl<'a> SearchCtx<'a> {
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
+		// Reverse futility pruning
+		if !in_check && NODE_TYPE != node_types::PV && static_eval >= beta + 150 * depth as i32 {
+			return Some(static_eval);
+		}
+
 		// NMP
 		{
 			let r = 3 + depth / 3;
