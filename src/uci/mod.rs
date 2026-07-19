@@ -154,7 +154,7 @@ impl UCIInstance {
 	fn go(&mut self, params: &[&str]) {
 		let mut depth: u16 = 255;
 		let mut time: i32 = i32::MAX - 1;
-		let mut inc: i32 = i32::MAX - 1;
+		let mut inc: i32 = 0;
 		for chunk in params.chunks(2) {
 			if let [name, value] = *chunk {
 				let Ok(value): Result<i32, std::num::ParseIntError> = value.parse() else {
