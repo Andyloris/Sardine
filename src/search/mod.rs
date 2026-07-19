@@ -557,6 +557,12 @@ impl<'a> SearchCtx<'a> {
 			}
 		} {
 			//for m in move_list.iter() {
+
+			// Avoids playing illegal moves when running out of time
+			if best_move == Move::default() {
+				best_move = *m;
+			}
+
 			self.check_counter += 1;
 
 			if !self.stop_search
