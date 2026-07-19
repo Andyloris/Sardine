@@ -508,7 +508,9 @@ impl<'a> SearchCtx<'a> {
 		);
 	}
 
-	fn bestmove(&mut self, depth: u16, mut alpha: i32, beta: i32) -> Option<(Move, i32)> {
+	fn bestmove(&mut self, depth: u16, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
+		alpha = alpha.max(-99999);
+		beta = beta.min(99999);
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
@@ -520,15 +522,12 @@ impl<'a> SearchCtx<'a> {
 			// No adjustment for mate scores since ply from root == 0
 			match entry.score {
 				ScoreType::Exact(v) => {
-					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
 					return Some((entry.best_move, v));
 				}
 				ScoreType::Lower(v) if v >= beta => {
-					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
 					return Some((entry.best_move, v));
 				}
 				ScoreType::Upper(v) if v <= alpha => {
-					Self::uci_print_score(v, depth, entry.best_move, self.nodes);
 					return Some((entry.best_move, v));
 				}
 				_ => {}
@@ -623,8 +622,6 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if !self.stop_search {
-			Self::uci_print_score(best_value, depth, best_move, self.nodes);
-
 			let tt_score = if best_value < alpha_orig {
 				ScoreType::Upper(best_value)
 			} else if best_value >= beta_orig {
@@ -641,22 +638,29 @@ impl<'a> SearchCtx<'a> {
 	}
 
 	fn aspirated_search(&mut self, depth: u16, score: i32) -> Option<(Move, i32)> {
-		let mut alpha_delta = 10;
-		let mut beta_delta = alpha_delta;
+		let delta = 50;
+		let mut delta = (delta / 4) * 4;
+		let mut alpha = score - delta;
+		let mut beta = score + delta;
 
 		loop {
-			let search_info = self.bestmove(depth, score - alpha_delta, score + beta_delta)?;
-			if search_info.1 <= score - alpha_delta {
-				alpha_delta = (alpha_delta * 46) / 10;
+			let search_info = self.bestmove(depth, alpha, beta)?;
+			if search_info.1 <= alpha {
+				alpha -= delta;
+				delta *= 2;
+				delta = (delta / 4) * 4;
 				continue;
 			}
 
-			if search_info.1 >= score + beta_delta {
-				beta_delta = (beta_delta * 46) / 10;
+			if search_info.1 >= beta {
+				beta += delta;
+				delta *= 2;
+				delta = (delta / 4) * 4;
 				continue;
 			}
 
-			// No bound failures, return score
+			// No bound failures, return score and report to user
+			Self::uci_print_score(search_info.1, depth, search_info.0, self.nodes);
 			return Some(search_info);
 		}
 	}
@@ -671,10 +675,15 @@ impl<'a> SearchCtx<'a> {
 
 		for depth in 2..self.max_depth {
 			let info = self.aspirated_search(depth, best_info.1);
-			if info.is_none() {
+			if self.stop_search {
 				break;
 			}
-			best_info = info.unwrap();
+
+			if let Some(info) = info {
+				best_info = info;
+			} else {
+				break;
+			}
 		}
 
 		println!("bestmove {}", best_info.0);
