@@ -295,6 +295,17 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
+		// Futility pruning
+		let mut futile = false;
+		if !in_check
+			&& depth <= 4
+			&& !Self::is_mating_value(alpha)
+			&& !Self::is_mating_value(beta)
+			&& 200 * depth as i32 + static_eval < alpha
+		{
+			futile = true;
+		}
+
 		let mut ordered_move_list = match self.board.get_turn() {
 			Color::White => StagedMoveList::new::<WHITE>(hash_move, &self.board, false),
 			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
@@ -341,6 +352,16 @@ impl<'a> SearchCtx<'a> {
 				Color::Black => self.board.is_in_check::<BLACK>(),
 			};
 			self.stack[ply_from_root as usize + 1].in_check = gives_check;
+
+			if m.is_quiet() && futile && !gives_check {
+				match self.board.get_turn() {
+					Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
+					Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
+				}
+				.unwrap();
+				num_legal_moves += 1;
+				continue;
+			}
 
 			let mut r: i16 = 1;
 			// Late move reductions (LMR)
