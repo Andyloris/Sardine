@@ -40,7 +40,7 @@ static MVV_LVA_LOOKUP: [[i32; NUM_PIECES]; NUM_PIECES] = {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoveListStages {
 	HashMove = 0,
-	WinningCaptures = 1,
+	Captures = 1,
 	Quiets = 2,
 	Finished = 3,
 }
@@ -49,8 +49,8 @@ impl MoveListStages {
 	#[inline(always)]
 	pub const fn next(self) -> Self {
 		match self {
-			Self::HashMove => Self::WinningCaptures,
-			Self::WinningCaptures => Self::Quiets,
+			Self::HashMove => Self::Captures,
+			Self::Captures => Self::Quiets,
 			Self::Quiets => Self::Finished,
 			Self::Finished => Self::Finished,
 		}
@@ -59,7 +59,7 @@ impl MoveListStages {
 	#[inline(always)]
 	pub fn gen_moves<const C: u8>(self, board: &Board, buf: &mut MoveList) {
 		match self {
-			Self::WinningCaptures => {
+			Self::Captures => {
 				board.gen_pseudo_legal_captures_in_check::<C>(buf);
 			}
 			Self::Quiets => {
@@ -113,7 +113,7 @@ impl StagedMoveList {
 
 		match self.cur_stage {
 			MoveListStages::HashMove => i32::MAX - 1,
-			MoveListStages::WinningCaptures => {
+			MoveListStages::Captures => {
 				let from = board.get_piece_at_square::<C>(from).unwrap();
 				// Not E.P. thanks to short-circuit above. So we must have a victim on the to square
 				let victim = match C ^ 1 {
