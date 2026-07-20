@@ -121,6 +121,11 @@ impl Move {
 				| MoveFlag::QueenPromoCapture
 		)
 	}
+
+	#[inline(always)]
+	pub unsafe fn from_u16_unchecked(inner: u16) -> Self {
+		Self(inner)
+	}
 }
 
 impl Display for Move {

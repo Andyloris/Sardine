@@ -1,35 +1,46 @@
 use crate::board::{Board, movegen::Move};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ScoreType {
-	Exact(i32),
-	Upper(i32),
-	Lower(i32),
+	#[default]
+	Exact = 0,
+	Upper = 1,
+	Lower = 2,
 }
 
-impl ScoreType {
-	#[inline(always)]
-	pub const fn inner(self) -> i32 {
-		match self {
-			Self::Exact(v) => v,
-			Self::Upper(v) => v,
-			Self::Lower(v) => v,
+impl From<u8> for ScoreType {
+	fn from(value: u8) -> Self {
+		match value {
+			0 => Self::Exact,
+			1 => Self::Upper,
+			2 => Self::Lower,
+			_ => panic!("Invalid ScoreType determinant {value}"),
 		}
-	}
-}
-
-impl Default for ScoreType {
-	fn default() -> Self {
-		Self::Exact(0)
 	}
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
 	pub hash: u64,
-	pub score: ScoreType,
+	pub score: i16,
+	pub score_type: ScoreType,
 	pub best_move: Move,
 	pub depth: i16,
+}
+
+struct PackedTTEntry(u128);
+
+impl From<PackedTTEntry> for TTEntry {
+	fn from(PackedTTEntry(value): PackedTTEntry) -> Self {
+		Self {
+			hash: value as u64,
+			score: (value >> 64) as i16,
+			score_type: (((value >> 80) & 0x3) as u8).into(),
+			best_move: unsafe { Move::from_u16_unchecked((value >> 82) as u16) },
+			depth: (value >> 98) as i16,
+		}
+	}
 }
 
 pub struct TT {
@@ -45,13 +56,21 @@ impl TT {
 		}
 	}
 
-	pub fn add_entry(&mut self, board: &Board, best_move: Move, depth: i16, score: ScoreType) {
+	pub fn add_entry(
+		&mut self,
+		board: &Board,
+		best_move: Move,
+		depth: i16,
+		score: i16,
+		score_type: ScoreType,
+	) {
 		let idx = board.get_hash() % (1 << self.size_exponent as u64);
 		self.table[idx as usize] = TTEntry {
 			hash: board.get_hash(),
 			best_move,
 			depth,
 			score,
+			score_type,
 		};
 	}
 

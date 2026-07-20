@@ -31,10 +31,10 @@ pub struct Board {
 	zobrist: u64,
 	hash_history: Vec<u64>,
 
-	mg_material_score: i32,
-	eg_material_score: i32,
-	mg_pst_values: i32,
-	eg_pst_values: i32,
+	mg_material_score: i16,
+	eg_material_score: i16,
+	mg_pst_values: i16,
+	eg_pst_values: i16,
 	gamephase: u8,
 }
 

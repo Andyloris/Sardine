@@ -13,6 +13,7 @@ use crate::{
 };
 
 const TIMER_CHECK_INTERVAL: usize = 4096;
+const IMMEDIATE_MATE_SCORE: i32 = 32766;
 
 mod node_types {
 	pub const CUT: u8 = 0;
@@ -23,7 +24,7 @@ mod node_types {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct StackElem {
 	pub in_check: bool,
-	pub static_eval: i32,
+	pub static_eval: i16,
 }
 
 pub struct SearchCtx<'a> {
@@ -85,7 +86,7 @@ impl<'a> SearchCtx<'a> {
 			Color::Black => self.board.is_in_check::<BLACK>(),
 		};
 
-		let mut best_value = -999999;
+		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut move_list = MoveList::default();
 		if is_in_check {
 			match self.board.get_turn() {
@@ -108,7 +109,7 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			// Standing pat
-			best_value = self.board.eval_objective()
+			best_value = self.board.eval_objective() as i32
 				* match self.board.get_turn() {
 					Color::White => 1,
 					Color::Black => -1,
@@ -171,7 +172,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if num_legal_moves == 0 && is_in_check {
-			let mating_value = -99999 + ply_from_root as i32;
+			let mating_value = -IMMEDIATE_MATE_SCORE + ply_from_root as i32;
 			return Some(mating_value);
 		}
 
@@ -210,28 +211,37 @@ impl<'a> SearchCtx<'a> {
 		if let Some(ref entry) = entry
 			&& entry.depth >= depth as i16
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
-			&& (NODE_TYPE == node_types::CUT || entry.score.inner() <= alpha)
+			&& (NODE_TYPE == node_types::CUT || entry.score as i32 <= alpha)
 		{
-			match entry.score {
-				ScoreType::Exact(v) => {
-					return if Self::is_mating_value(v) {
-						Some((v.abs() - ply_from_root as i32) * v.signum())
+			match entry.score_type {
+				ScoreType::Exact => {
+					return if Self::is_mating_value(entry.score as i32) {
+						Some(
+							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
+								as i32,
+						)
 					} else {
-						Some(v)
+						Some(entry.score as i32)
 					};
 				}
-				ScoreType::Lower(v) if v >= beta => {
-					return if Self::is_mating_value(v) {
-						Some((v.abs() - ply_from_root as i32) * v.signum())
+				ScoreType::Lower if entry.score as i32 >= beta => {
+					return if Self::is_mating_value(entry.score as i32) {
+						Some(
+							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
+								as i32,
+						)
 					} else {
-						Some(v)
+						Some(entry.score as i32)
 					};
 				}
-				ScoreType::Upper(v) if v <= alpha => {
-					return if Self::is_mating_value(v) {
-						Some((v.abs() - ply_from_root as i32) * v.signum())
+				ScoreType::Upper if entry.score as i32 <= alpha => {
+					return if Self::is_mating_value(entry.score as i32) {
+						Some(
+							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
+								as i32,
+						)
 					} else {
-						Some(v)
+						Some(entry.score as i32)
 					};
 				}
 				_ => {}
@@ -245,13 +255,13 @@ impl<'a> SearchCtx<'a> {
 		let hash_move = entry.as_ref().map(|e| e.best_move);
 
 		let in_check = self.stack[ply_from_root as usize].in_check;
-		let static_eval = self.board.eval_objective()
+		let static_eval = self.board.eval_objective() as i32
 			* match self.board.get_turn() {
 				Color::White => 1,
 				Color::Black => -1,
 			};
 
-		self.stack[ply_from_root as usize].static_eval = static_eval;
+		self.stack[ply_from_root as usize].static_eval = static_eval as i16;
 
 		// Check extension
 		if in_check {
@@ -259,8 +269,8 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		// MDP
-		alpha = alpha.max(-99999 + ply_from_root as i32);
-		beta = beta.min(99999 - ply_from_root as i32);
+		alpha = alpha.max(-IMMEDIATE_MATE_SCORE + ply_from_root as i32);
+		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32);
 		if alpha >= beta {
 			return Some(alpha);
 		}
@@ -323,7 +333,7 @@ impl<'a> SearchCtx<'a> {
 
 		let mut searched_quiets = MoveList::default();
 
-		let mut best_value = -999999;
+		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
@@ -497,33 +507,38 @@ impl<'a> SearchCtx<'a> {
 				Color::White => self.board.is_in_check::<WHITE>(),
 				Color::Black => self.board.is_in_check::<BLACK>(),
 			} {
-				let mating_value = -99999 + ply_from_root as i32;
+				let mating_value = -IMMEDIATE_MATE_SCORE + ply_from_root as i32;
 				return Some(mating_value);
 			}
 
 			return Some(0);
 		}
 
-		let tt_score = if best_value < alpha_orig {
-			ScoreType::Upper(best_value)
+		let tt_score_type = if best_value < alpha_orig {
+			ScoreType::Upper
 		} else if best_value >= beta_orig {
-			ScoreType::Lower(best_value)
+			ScoreType::Lower
 		} else {
-			ScoreType::Exact(best_value)
+			ScoreType::Exact
 		};
 
-		self.tt
-			.add_entry(&self.board, best_move, depth as i16, tt_score);
+		self.tt.add_entry(
+			&self.board,
+			best_move,
+			depth as i16,
+			best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+			tt_score_type,
+		);
 
 		Some(best_value)
 	}
 
 	fn is_mating_value(v: i32) -> bool {
-		(99999 - v.abs()) <= 256
+		(IMMEDIATE_MATE_SCORE - v.abs()) <= 256
 	}
 
 	fn get_dtm_from_score(v: i32) -> i32 {
-		(99999 - v.abs()) / 2
+		(IMMEDIATE_MATE_SCORE - v.abs()) / 2
 	}
 
 	fn uci_print_score(
@@ -552,8 +567,8 @@ impl<'a> SearchCtx<'a> {
 	}
 
 	fn bestmove(&mut self, depth: u16, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
-		alpha = alpha.max(-99999);
-		beta = beta.min(99999);
+		alpha = alpha.max(-IMMEDIATE_MATE_SCORE);
+		beta = beta.min(IMMEDIATE_MATE_SCORE);
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
@@ -563,15 +578,15 @@ impl<'a> SearchCtx<'a> {
 			&& depth == 0
 		{
 			// No adjustment for mate scores since ply from root == 0
-			match entry.score {
-				ScoreType::Exact(v) => {
-					return Some((entry.best_move, v));
+			match entry.score_type {
+				ScoreType::Exact => {
+					return Some((entry.best_move, entry.score as i32));
 				}
-				ScoreType::Lower(v) if v >= beta => {
-					return Some((entry.best_move, v));
+				ScoreType::Lower if entry.score as i32 >= beta => {
+					return Some((entry.best_move, entry.score as i32));
 				}
-				ScoreType::Upper(v) if v <= alpha => {
-					return Some((entry.best_move, v));
+				ScoreType::Upper if entry.score as i32 <= alpha => {
+					return Some((entry.best_move, entry.score as i32));
 				}
 				_ => {}
 			};
@@ -588,7 +603,7 @@ impl<'a> SearchCtx<'a> {
 			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
 		};
 
-		let mut best_value = -999999;
+		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
 		while let Some(m) = match self.board.get_turn() {
@@ -671,16 +686,22 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if !self.stop_search {
-			let tt_score = if best_value < alpha_orig {
-				ScoreType::Upper(best_value)
+			let tt_score_type = if best_value < alpha_orig {
+				ScoreType::Upper
 			} else if best_value >= beta_orig {
-				ScoreType::Lower(best_value)
+				ScoreType::Lower
 			} else {
-				ScoreType::Exact(best_value)
+				ScoreType::Exact
 			};
 
-			self.tt
-				.add_entry(&self.board, best_move, depth as i16, tt_score);
+			self.tt.add_entry(
+				&self.board,
+				best_move,
+				depth as i16,
+				// This clamp is here just in case
+				best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+				tt_score_type,
+			);
 		}
 
 		Some((best_move, best_value))
@@ -728,7 +749,7 @@ impl<'a> SearchCtx<'a> {
 		self.seldepth = 0;
 
 		let mut best_info = self
-			.bestmove(1, -999999999, 999999999)
+			.bestmove(1, -IMMEDIATE_MATE_SCORE - 1, IMMEDIATE_MATE_SCORE + 1)
 			.expect("Failed depth 1 search in time");
 
 		for depth in 2..self.max_depth {
