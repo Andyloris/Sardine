@@ -104,7 +104,7 @@ pub const fn get_king_attacks(sq: u8) -> u64 {
 #[inline(always)]
 #[cfg(not(feature = "pext_magics"))]
 const fn magic_hash(magic: &Magic, occ: u64) -> usize {
-	return (((occ & magic.mask) * magic.magic) >> magic.shift) as usize;
+	return (((occ & magic.mask).wrapping_mul(magic.magic)) >> magic.shift) as usize;
 }
 
 #[inline(always)]

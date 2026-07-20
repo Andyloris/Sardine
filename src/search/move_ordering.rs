@@ -309,5 +309,7 @@ pub fn update_history<const C: u8>(
 ) {
 	let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
 	let history_val = &mut history[C as usize][from as usize][to as usize];
-	*history_val = clamped_bonus - *history_val * clamped_bonus.abs() / MAX_HISTORY;
+	// We need the casts to i32s to avoid overflowing
+	*history_val += clamped_bonus
+		- ((*history_val as i32 * clamped_bonus.abs() as i32) / MAX_HISTORY as i32) as i16;
 }
