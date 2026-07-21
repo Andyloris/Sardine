@@ -29,20 +29,6 @@ pub struct TTEntry {
 	pub depth: i16,
 }
 
-struct PackedTTEntry(u128);
-
-impl From<PackedTTEntry> for TTEntry {
-	fn from(PackedTTEntry(value): PackedTTEntry) -> Self {
-		Self {
-			hash: value as u64,
-			score: (value >> 64) as i16,
-			score_type: (((value >> 80) & 0x3) as u8).into(),
-			best_move: unsafe { Move::from_u16_unchecked((value >> 82) as u16) },
-			depth: (value >> 98) as i16,
-		}
-	}
-}
-
 pub struct TT {
 	size_exponent: usize,
 	table: Box<[TTEntry]>,
