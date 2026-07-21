@@ -10,3 +10,4 @@ pext_magics = []
 [dependencies]
 linkme = "0.3.36"
 shakmaty = "0.30.0"
+static_assertions = "1.1.0"

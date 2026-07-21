@@ -1,4 +1,8 @@
-use crate::board::{Board, movegen::Move};
+use crate::board::{
+	Board,
+	movegen::Move,
+	utils::{BLACK, Color, WHITE},
+};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -22,11 +26,26 @@ impl From<u8> for ScoreType {
 
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
-	pub hash: u64,
+	pub hash: u32,
 	pub score: i16,
 	pub score_type: ScoreType,
 	pub best_move: Move,
 	pub depth: i16,
+}
+
+//static_assertions::const_assert!(core::mem::size_of::<TTEntry>() == 16);
+
+// Bit-trick coming from fast-hash
+const fn u64_to_u32_fermat_residue(h: u64) -> u32 {
+	(h as u32).wrapping_sub((h >> 32) as u32)
+}
+
+const fn u32_to_u16_fermat_residue(h: u32) -> u16 {
+	(h as u16).wrapping_sub((h >> 16) as u16)
+}
+
+const fn u64_to_u16_fermat_residue(h: u64) -> u16 {
+	u32_to_u16_fermat_residue(u64_to_u32_fermat_residue(h))
 }
 
 pub struct TT {
@@ -50,9 +69,9 @@ impl TT {
 		score: i16,
 		score_type: ScoreType,
 	) {
-		let idx = board.get_hash() % (1 << self.size_exponent as u64);
+		let idx = board.get_hash() % (1 << self.size_exponent);
 		self.table[idx as usize] = TTEntry {
-			hash: board.get_hash(),
+			hash: u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1)),
 			best_move,
 			depth,
 			score,
@@ -63,7 +82,12 @@ impl TT {
 	pub fn probe(&self, board: &Board) -> Option<&TTEntry> {
 		let idx = board.get_hash() % (1 << self.size_exponent as u64);
 		let entry = &self.table[idx as usize];
-		if board.get_hash() == entry.hash {
+		if u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1))
+			== entry.hash
+			&& match board.get_turn() {
+				Color::White => board.is_pseudo_legal::<WHITE>(&entry.best_move),
+				Color::Black => board.is_pseudo_legal::<BLACK>(&entry.best_move),
+			} {
 			return Some(entry);
 		}
 
