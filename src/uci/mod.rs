@@ -152,7 +152,7 @@ impl UCIInstance {
 	}
 
 	fn go(&mut self, params: &[&str]) {
-		let mut depth: u16 = 255;
+		let mut depth: u8 = 246;
 		let mut time: i32 = i32::MAX - 1;
 		let mut inc: i32 = 0;
 		for chunk in params.chunks(2) {
@@ -162,7 +162,7 @@ impl UCIInstance {
 				};
 
 				match name {
-					"depth" if value > 0 => depth = value as u16,
+					"depth" if value > 0 => depth = value.max(255) as u8,
 					"wtime" if self.position.get_turn() == Color::White => time = value,
 					"winc" if self.position.get_turn() == Color::White => inc = value,
 					"btime" if self.position.get_turn() == Color::Black => time = value,

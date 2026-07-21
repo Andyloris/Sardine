@@ -32,8 +32,8 @@ pub struct SearchCtx<'a> {
 	board: Board,
 	search_start: Instant,
 	allocated_time_millis: u64,
-	max_depth: u16,
-	seldepth: u16,
+	max_depth: u8,
+	seldepth: u8,
 	check_counter: usize,
 	stop_search: bool,
 	nodes: u64,
@@ -43,7 +43,7 @@ pub struct SearchCtx<'a> {
 }
 
 impl<'a> SearchCtx<'a> {
-	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: u16) -> Self {
+	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: u8) -> Self {
 		Self {
 			tt,
 			board,
@@ -60,7 +60,7 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
-	fn quiescence_search(&mut self, ply_from_root: u16, mut alpha: i32, beta: i32) -> Option<i32> {
+	fn quiescence_search(&mut self, ply_from_root: u8, mut alpha: i32, beta: i32) -> Option<i32> {
 		self.check_counter += 1;
 
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
@@ -181,8 +181,8 @@ impl<'a> SearchCtx<'a> {
 
 	fn negamax<const NODE_TYPE: u8>(
 		&mut self,
-		mut depth: u16,
-		ply_from_root: u16,
+		mut depth: u8,
+		ply_from_root: u8,
 		mut alpha: i32,
 		mut beta: i32,
 	) -> Option<i32> {
@@ -209,7 +209,7 @@ impl<'a> SearchCtx<'a> {
 
 		let entry = self.tt.probe(&self.board).cloned();
 		if let Some(ref entry) = entry
-			&& entry.depth >= depth as i16
+			&& entry.depth >= depth
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
 			&& (NODE_TYPE == node_types::CUT || entry.score as i32 <= alpha)
 		{
@@ -383,10 +383,10 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			let mut r: i16 = 1;
+			let mut r: i8 = 1;
 			// Late move reductions (LMR)
 			if (depth >= 3) && (num_legal_moves > 0) {
-				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i16;
+				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i8;
 			}
 
 			// ToDo: Implementation leaves board messed up after quitting search when timing out
@@ -459,7 +459,7 @@ impl<'a> SearchCtx<'a> {
 						self.killers[ply_from_root as usize][0];
 					self.killers[ply_from_root as usize][0] = m;
 
-					let bonus = depth * depth;
+					let bonus = depth as i16 * depth as i16;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
 						match self.board.get_turn() {
@@ -467,13 +467,13 @@ impl<'a> SearchCtx<'a> {
 								&mut self.history,
 								from,
 								to,
-								-(bonus as i16),
+								-bonus,
 							),
 							Color::Black => move_ordering::update_history::<BLACK>(
 								&mut self.history,
 								from,
 								to,
-								-(bonus as i16),
+								-bonus,
 							),
 						}
 					}
@@ -484,13 +484,13 @@ impl<'a> SearchCtx<'a> {
 							&mut self.history,
 							from,
 							to,
-							bonus as i16,
+							bonus,
 						),
 						Color::Black => move_ordering::update_history::<BLACK>(
 							&mut self.history,
 							from,
 							to,
-							bonus as i16,
+							bonus,
 						),
 					}
 				}
@@ -525,7 +525,7 @@ impl<'a> SearchCtx<'a> {
 		self.tt.add_entry(
 			&self.board,
 			best_move,
-			depth as i16,
+			depth,
 			best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
 			tt_score_type,
 		);
@@ -534,17 +534,17 @@ impl<'a> SearchCtx<'a> {
 	}
 
 	fn is_mating_value(v: i32) -> bool {
-		(IMMEDIATE_MATE_SCORE - v.abs()) <= 256
+		(IMMEDIATE_MATE_SCORE - v.abs()) <= 1000
 	}
 
 	fn get_dtm_from_score(v: i32) -> i32 {
-		(IMMEDIATE_MATE_SCORE - v.abs()) / 2
+		(IMMEDIATE_MATE_SCORE - v.abs() + 1) / 2
 	}
 
 	fn uci_print_score(
 		score: i32,
-		depth: u16,
-		seldepth: u16,
+		depth: u8,
+		seldepth: u8,
 		best_move: Move,
 		nodes: u64,
 		search_start: Instant,
@@ -566,7 +566,7 @@ impl<'a> SearchCtx<'a> {
 		);
 	}
 
-	fn bestmove(&mut self, depth: u16, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
+	fn bestmove(&mut self, depth: u8, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
 		alpha = alpha.max(-IMMEDIATE_MATE_SCORE);
 		beta = beta.min(IMMEDIATE_MATE_SCORE);
 		let alpha_orig = alpha;
@@ -574,7 +574,7 @@ impl<'a> SearchCtx<'a> {
 
 		let entry = self.tt.probe(&self.board);
 		if let Some(entry) = entry
-			&& entry.depth >= depth as i16
+			&& entry.depth >= depth
 			&& depth == 0
 		{
 			// No adjustment for mate scores since ply from root == 0
@@ -697,7 +697,7 @@ impl<'a> SearchCtx<'a> {
 			self.tt.add_entry(
 				&self.board,
 				best_move,
-				depth as i16,
+				depth,
 				// This clamp is here just in case
 				best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
 				tt_score_type,
@@ -707,7 +707,7 @@ impl<'a> SearchCtx<'a> {
 		Some((best_move, best_value))
 	}
 
-	fn aspirated_search(&mut self, depth: u16, score: i32) -> Option<(Move, i32)> {
+	fn aspirated_search(&mut self, depth: u8, score: i32) -> Option<(Move, i32)> {
 		let delta = 50;
 		let mut delta = (delta / 4) * 4;
 		let mut alpha = score - delta;

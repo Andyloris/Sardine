@@ -30,7 +30,7 @@ pub struct TTEntry {
 	pub score: i16,
 	pub score_type: ScoreType,
 	pub best_move: Move,
-	pub depth: i16,
+	pub depth: u8,
 }
 
 //static_assertions::const_assert!(core::mem::size_of::<TTEntry>() == 16);
@@ -65,7 +65,7 @@ impl TT {
 		&mut self,
 		board: &Board,
 		best_move: Move,
-		depth: i16,
+		depth: u8,
 		score: i16,
 		score_type: ScoreType,
 	) {
