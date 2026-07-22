@@ -267,6 +267,10 @@ impl Board {
 	pub fn fifty_moves_rule(&self) -> bool {
 		self.halfmove_clock >= 100
 	}
+
+	pub fn get_halfmove_clock(&self) -> usize {
+		self.halfmove_clock
+	}
 }
 
 impl Display for Board {

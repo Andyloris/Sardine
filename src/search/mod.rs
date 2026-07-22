@@ -213,7 +213,7 @@ impl<'a> SearchCtx<'a> {
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
 			&& (NODE_TYPE == node_types::CUT || entry.score as i32 <= alpha)
 		{
-			match entry.score_type {
+			match entry.get_score_type() {
 				ScoreType::Exact => {
 					return if Self::is_mating_value(entry.score as i32) {
 						Some(
@@ -578,7 +578,7 @@ impl<'a> SearchCtx<'a> {
 			&& depth == 0
 		{
 			// No adjustment for mate scores since ply from root == 0
-			match entry.score_type {
+			match entry.get_score_type() {
 				ScoreType::Exact => {
 					return Some((entry.best_move, entry.score as i32));
 				}

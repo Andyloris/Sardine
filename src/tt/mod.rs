@@ -16,7 +16,7 @@ pub enum ScoreType {
 impl From<u8> for ScoreType {
 	fn from(value: u8) -> Self {
 		match value {
-			0 => Self::Exact,
+			0 | 3 => Self::Exact,
 			1 => Self::Upper,
 			2 => Self::Lower,
 			_ => panic!("Invalid ScoreType determinant {value}"),
@@ -28,9 +28,21 @@ impl From<u8> for ScoreType {
 pub struct TTEntry {
 	pub hash: u32,
 	pub score: i16,
-	pub score_type: ScoreType,
+	flags: u8,
 	pub best_move: Move,
 	pub depth: u8,
+}
+
+impl TTEntry {
+	#[inline(always)]
+	pub fn get_score_type(&self) -> ScoreType {
+		ScoreType::from(self.flags & 0x3)
+	}
+
+	#[inline(always)]
+	pub fn get_generation(&self) -> u8 {
+		self.flags >> 2
+	}
 }
 
 //static_assertions::const_assert!(core::mem::size_of::<TTEntry>() == 16);
@@ -70,13 +82,23 @@ impl TT {
 		score_type: ScoreType,
 	) {
 		let idx = board.get_hash() % (1 << self.size_exponent);
-		self.table[idx as usize] = TTEntry {
-			hash: u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1)),
-			best_move,
-			depth,
-			score,
-			score_type,
-		};
+		let entry = &mut self.table[idx as usize];
+		let generation = (board.get_halfmove_clock() & 0x3F) as u8;
+		let hash = u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1));
+		if score_type == ScoreType::Exact
+			|| depth >= entry.depth
+			|| ((generation << 2).wrapping_sub(entry.get_generation() << 2)) != 0
+		{
+			*entry = TTEntry {
+				hash,
+				best_move,
+				depth,
+				score,
+				flags: (score_type as u8) | generation << 2,
+			};
+		} else if entry.depth >= 5 {
+			entry.depth -= 1;
+		}
 	}
 
 	pub fn probe(&self, board: &Board) -> Option<&TTEntry> {
