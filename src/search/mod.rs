@@ -268,6 +268,16 @@ impl<'a> SearchCtx<'a> {
 
 		self.stack[ply_from_root as usize].static_eval = static_eval as i16;
 
+		let improving = if in_check {
+			false
+		} else if (ply_from_root >= 2) && (!self.stack[ply_from_root as usize - 2].in_check) {
+			static_eval > self.stack[ply_from_root as usize - 2].static_eval as i32
+		} else if (ply_from_root >= 4) && (!self.stack[ply_from_root as usize - 4].in_check) {
+			static_eval > self.stack[ply_from_root as usize - 4].static_eval as i32
+		} else {
+			false // ToDo: try returning true here someday
+		};
+
 		// Check extension
 		if in_check {
 			depth += 1;
@@ -284,7 +294,10 @@ impl<'a> SearchCtx<'a> {
 		let beta_orig = beta;
 
 		// Reverse futility pruning
-		if !in_check && NODE_TYPE != node_types::PV && static_eval >= beta + 150 * depth as i32 {
+		if !in_check
+			&& NODE_TYPE != node_types::PV
+			&& static_eval >= beta + 150 * depth.saturating_sub(improving as u8) as i32
+		{
 			return Some(static_eval);
 		}
 
