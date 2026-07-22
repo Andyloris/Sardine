@@ -255,11 +255,16 @@ impl<'a> SearchCtx<'a> {
 		let hash_move = entry.as_ref().map(|e| e.best_move);
 
 		let in_check = self.stack[ply_from_root as usize].in_check;
-		let static_eval = self.board.eval_objective() as i32
-			* match self.board.get_turn() {
-				Color::White => 1,
-				Color::Black => -1,
-			};
+		let static_eval = if !in_check {
+			self.board.eval_objective() as i32
+				* match self.board.get_turn() {
+					Color::White => 1,
+					Color::Black => -1,
+				}
+		} else {
+			// Do not evaluate in check
+			-IMMEDIATE_MATE_SCORE - 1
+		};
 
 		self.stack[ply_from_root as usize].static_eval = static_eval as i16;
 
@@ -592,6 +597,23 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 		let hash_move = entry.map(|e| e.best_move);
+		let in_check = match self.board.get_turn() {
+			Color::White => self.board.is_in_check::<WHITE>(),
+			Color::Black => self.board.is_in_check::<BLACK>(),
+		};
+
+		let static_eval = if !in_check {
+			self.board.eval_objective() as i32
+				* match self.board.get_turn() {
+					Color::White => 1,
+					Color::Black => -1,
+				}
+		} else {
+			-IMMEDIATE_MATE_SCORE - 1
+		};
+
+		self.stack[0].static_eval = static_eval as i16;
+		self.stack[0].in_check = in_check;
 
 		let mut move_list = MoveList::default();
 
