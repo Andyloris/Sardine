@@ -303,7 +303,7 @@ impl<'a> SearchCtx<'a> {
 
 		// NMP
 		{
-			let r = 3 + depth / 3;
+			let r = 3 + depth / 3 + improving as u8;
 			if !in_check
 				&& depth >= 2
 				&& match self.board.get_turn() {
