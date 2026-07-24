@@ -213,15 +213,34 @@ impl Board {
 		}
 	}
 
-	pub fn eval_objective(&self) -> i16 {
-		let mg_weight = self.gamephase.min(24) as i32;
-		let eg_weight = 24 - mg_weight;
+	const MAX_GAMEPHASE: i32 = 16 * GAMEPHASE_INCREMENTS[Piece::Pawn as usize] as i32
+		+ 4 * GAMEPHASE_INCREMENTS[Piece::Knight as usize] as i32
+		+ 4 * GAMEPHASE_INCREMENTS[Piece::Bishop as usize] as i32
+		+ 4 * GAMEPHASE_INCREMENTS[Piece::Rook as usize] as i32
+		+ 2 * GAMEPHASE_INCREMENTS[Piece::Queen as usize] as i32
+		+ 2 * GAMEPHASE_INCREMENTS[Piece::King as usize] as i32;
 
-		// Rounded tapered eval
-		((((mg_weight * (self.mg_pst_values as i32 + self.mg_material_score as i32)
-			+ eg_weight * (self.eg_pst_values as i32 + self.eg_material_score as i32))
-			/ 24) / 4)
-			* 4) as i16
+	const TEMPO_BONUS: i32 = 13;
+	pub fn eval_objective(&self) -> i16 {
+		let mg_weight = self.gamephase.min(Self::MAX_GAMEPHASE as u8) as i32;
+		let eg_weight = Self::MAX_GAMEPHASE - mg_weight;
+
+		let mg_material = self.mg_pst_values as i32 + self.mg_material_score as i32;
+		let eg_material = self.eg_pst_values as i32 + self.eg_material_score as i32;
+
+		// Tapered eval
+		let material = (mg_weight * mg_material + eg_weight * eg_material) / Self::MAX_GAMEPHASE;
+
+		let tempo = match self.turn {
+			Color::White => Self::TEMPO_BONUS,
+			Color::Black => -Self::TEMPO_BONUS,
+		};
+
+		let eval = material as i16 + tempo as i16;
+
+		// Evaluation rounding to improve alpha-beta effectiveness while ignoring subtle and noisy
+		// positional differences
+		(eval / 4) * 4
 	}
 
 	// SEE stuff from https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
