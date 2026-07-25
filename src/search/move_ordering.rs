@@ -162,6 +162,7 @@ impl StagedMoveList {
 			self.cur_stage = self.cur_stage.next();
 			if self.only_captures && self.cur_stage == MoveListStages::Quiets {
 				self.cur_stage = self.cur_stage.next();
+				return self.pick_move::<C>(board, history, killers);
 			}
 
 			let old_list_len = self.cur_move_list.len();
@@ -216,85 +217,6 @@ impl StagedMoveList {
 
 	pub fn stage(&self) -> MoveListStages {
 		self.cur_stage
-	}
-}
-
-pub struct OrderedMoveList<'a> {
-	moves: &'a mut [Move],
-	scores: [i32; MAX_MOVE_LIST_SIZE],
-	current_move_idx: usize,
-}
-
-impl<'a> OrderedMoveList<'a> {
-	pub fn from_move_list(
-		board: &Board,
-		move_list: &'a mut MoveList,
-		hash_move: Option<Move>,
-	) -> OrderedMoveList<'a> {
-		let mut res = Self {
-			moves: move_list.as_mut_slice(),
-			scores: [0; MAX_MOVE_LIST_SIZE],
-			current_move_idx: 0,
-		};
-
-		for i in 0..res.moves.len() {
-			res.scores[i] = match board.get_turn() {
-				Color::White => Self::score_move::<WHITE>(board, &res.moves[i], hash_move),
-				Color::Black => Self::score_move::<BLACK>(board, &res.moves[i], hash_move),
-			};
-		}
-
-		res
-	}
-
-	fn score_move<const C: u8>(board: &Board, m: &Move, hash_move: Option<Move>) -> i32 {
-		if let Some(hash_move) = hash_move {
-			if hash_move == *m {
-				return i32::MAX - 1;
-			}
-		}
-
-		let (from, to, flags) = m.unpack();
-
-		match flags {
-			MoveFlag::Captures
-			| MoveFlag::KnightPromoCapture
-			| MoveFlag::BishopPromoCapture
-			| MoveFlag::RookPromoCapture
-			| MoveFlag::QueenPromoCapture => {
-				let from = board.get_piece_at_square::<C>(from).unwrap();
-				let victim = match C ^ 1 {
-					WHITE => board.get_piece_at_square::<WHITE>(to).unwrap(),
-					BLACK => board.get_piece_at_square::<BLACK>(to).unwrap(),
-					_ => Piece::Pawn,
-				};
-
-				MVV_LVA_LOOKUP[from as usize][victim as usize]
-			}
-
-			_ => 0,
-		}
-	}
-
-	pub fn pick_move(&mut self, board: &Board) -> Option<&Move> {
-		if self.current_move_idx >= self.moves.len() {
-			return None;
-		}
-
-		let mut best_move_idx = self.current_move_idx;
-		let mut best_score = i32::MIN + 1;
-
-		for i in self.current_move_idx..self.moves.len() {
-			if self.scores[i] > best_score {
-				best_score = self.scores[i];
-				best_move_idx = i;
-			}
-		}
-
-		self.moves.swap(self.current_move_idx, best_move_idx);
-		self.scores.swap(self.current_move_idx, best_move_idx);
-		self.current_move_idx += 1;
-		Some(&self.moves[self.current_move_idx - 1])
 	}
 }
 

@@ -8,7 +8,7 @@ use crate::{
 		movegen::{Move, MoveList},
 		utils::{BLACK, Color, WHITE},
 	},
-	search::move_ordering::{OrderedMoveList, StagedMoveList},
+	search::move_ordering::StagedMoveList,
 	tt::{ScoreType, TT},
 };
 
@@ -87,27 +87,10 @@ impl<'a> SearchCtx<'a> {
 		};
 
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
-		let mut move_list = MoveList::default();
+		let mut only_captures = true;
 		if is_in_check {
-			match self.board.get_turn() {
-				Color::White => self
-					.board
-					.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-				Color::Black => self
-					.board
-					.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-			}
+			only_captures = false;
 		} else {
-			// This avoids checking if in check twice
-			match self.board.get_turn() {
-				Color::White => self
-					.board
-					.gen_pseudo_legal_captures::<WHITE>(&mut move_list),
-				Color::Black => self
-					.board
-					.gen_pseudo_legal_captures::<BLACK>(&mut move_list),
-			}
-
 			// Standing pat
 			best_value = self.board.eval_objective() as i32
 				* match self.board.get_turn() {
@@ -124,12 +107,24 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
-		// We don't use TT in the quiescence search, so staged movegen is useless
-		let mut ordered_move_list =
-			OrderedMoveList::from_move_list(&self.board, &mut move_list, None);
+		let mut ordered_move_list = match self.board.get_turn() {
+			Color::White => StagedMoveList::new::<WHITE>(None, &self.board, only_captures),
+			Color::Black => StagedMoveList::new::<BLACK>(None, &self.board, only_captures),
+		};
 
 		let mut num_legal_moves = 0;
-		while let Some(m) = ordered_move_list.pick_move(&self.board) {
+		while let Some(m) = match self.board.get_turn() {
+			Color::White => ordered_move_list.pick_move::<WHITE>(
+				&self.board,
+				Some(&self.history),
+				Some(&self.killers[ply_from_root as usize]),
+			),
+			Color::Black => ordered_move_list.pick_move::<BLACK>(
+				&self.board,
+				Some(&self.history),
+				Some(&self.killers[ply_from_root as usize]),
+			),
+		} {
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
 				Color::White => self.board.do_move::<WHITE>(m),
