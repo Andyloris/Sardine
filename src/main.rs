@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 use shakmaty::{Chess, Position, fen::Fen};
 
 use crate::{

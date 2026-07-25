@@ -275,7 +275,7 @@ impl<'a> SearchCtx<'a> {
 		} else if (ply_from_root >= 4) && (!self.stack[ply_from_root as usize - 4].in_check) {
 			static_eval > self.stack[ply_from_root as usize - 4].static_eval as i32
 		} else {
-			false // ToDo: try returning true here someday
+			true // ToDo: try returning true here someday
 		};
 
 		// Check extension
