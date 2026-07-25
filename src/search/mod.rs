@@ -60,6 +60,14 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
+	fn tt_score_to_search_score(score: i16, ply_from_root: u8) -> i16 {
+		if Self::is_mating_value(score as i32) {
+			(score.abs() - ply_from_root as i16) * score.signum()
+		} else {
+			score
+		}
+	}
+
 	fn quiescence_search(&mut self, ply_from_root: u8, mut alpha: i32, beta: i32) -> Option<i32> {
 		self.check_counter += 1;
 
@@ -208,37 +216,11 @@ impl<'a> SearchCtx<'a> {
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
 			&& (NODE_TYPE == node_types::CUT || entry.score as i32 <= alpha)
 		{
+			let score = Self::tt_score_to_search_score(entry.score, ply_from_root);
 			match entry.get_score_type() {
-				ScoreType::Exact => {
-					return if Self::is_mating_value(entry.score as i32) {
-						Some(
-							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
-								as i32,
-						)
-					} else {
-						Some(entry.score as i32)
-					};
-				}
-				ScoreType::Lower if entry.score as i32 >= beta => {
-					return if Self::is_mating_value(entry.score as i32) {
-						Some(
-							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
-								as i32,
-						)
-					} else {
-						Some(entry.score as i32)
-					};
-				}
-				ScoreType::Upper if entry.score as i32 <= alpha => {
-					return if Self::is_mating_value(entry.score as i32) {
-						Some(
-							((entry.score.abs() - ply_from_root as i16) * entry.score.signum())
-								as i32,
-						)
-					} else {
-						Some(entry.score as i32)
-					};
-				}
+				ScoreType::Exact => return Some(score as i32),
+				ScoreType::Lower if score as i32 >= beta => return Some(score as i32),
+				ScoreType::Upper if score as i32 <= alpha => return Some(score as i32),
 				_ => {}
 			};
 		}
@@ -589,6 +571,7 @@ impl<'a> SearchCtx<'a> {
 		if let Some(entry) = entry
 			&& entry.depth >= depth
 			&& depth == 0
+			&& entry.score as i32 <= alpha
 		{
 			// No adjustment for mate scores since ply from root == 0
 			match entry.get_score_type() {
@@ -782,7 +765,7 @@ impl<'a> SearchCtx<'a> {
 			.bestmove(1, -IMMEDIATE_MATE_SCORE - 1, IMMEDIATE_MATE_SCORE + 1)
 			.expect("Failed depth 1 search in time");
 
-		for depth in 2..self.max_depth {
+		for depth in 2..=self.max_depth {
 			let info = self.aspirated_search(depth, best_info.1);
 			if self.stop_search {
 				break;

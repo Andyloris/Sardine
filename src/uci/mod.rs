@@ -162,7 +162,7 @@ impl UCIInstance {
 				};
 
 				match name {
-					"depth" if value > 0 => depth = value.max(255) as u8,
+					"depth" if value > 0 => depth = value.min(245) as u8,
 					"wtime" if self.position.get_turn() == Color::White => time = value,
 					"winc" if self.position.get_turn() == Color::White => inc = value,
 					"btime" if self.position.get_turn() == Color::Black => time = value,
