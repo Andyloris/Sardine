@@ -101,13 +101,11 @@ pub const fn get_king_attacks(sq: u8) -> u64 {
 	KING_ATTACKS_TABLE[sq as usize]
 }
 
-#[inline(always)]
 #[cfg(not(feature = "pext_magics"))]
 const fn magic_hash(magic: &Magic, occ: u64) -> usize {
 	(((occ & magic.mask).wrapping_mul(magic.magic)) >> magic.shift) as usize
 }
 
-#[inline(always)]
 #[cfg(feature = "pext_magics")]
 fn magic_hash(magic: &Magic, occ: u64) -> usize {
 	unsafe { std::arch::x86_64::_pext_u64(occ, magic.mask) as usize }

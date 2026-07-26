@@ -62,7 +62,6 @@ fn get_zobrist_idx(delta: ZobristDelta) -> usize {
 }
 
 impl Board {
-	#[inline(always)]
 	pub(super) fn apply_zobrist_delta(&mut self, delta: ZobristDelta) {
 		let idx = get_zobrist_idx(delta);
 		let hash_update = ZOBRIST_TABLE[idx];

@@ -147,7 +147,6 @@ impl Board {
 		}
 	}
 
-	#[inline(always)]
 	pub(super) fn evaluation_add_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {
@@ -169,7 +168,6 @@ impl Board {
 		self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
-	#[inline(always)]
 	pub(super) fn evaluation_remove_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {
@@ -191,7 +189,6 @@ impl Board {
 		self.gamephase -= GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
-	#[inline(always)]
 	pub(super) fn evaluation_move_piece(&mut self, from: u8, to: u8, piece_color: PieceColorPair) {
 		let PieceColorPair(piece, color) = piece_color;
 		match color {

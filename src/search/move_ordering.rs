@@ -46,7 +46,6 @@ pub enum MoveListStages {
 }
 
 impl MoveListStages {
-	#[inline(always)]
 	pub const fn next(self) -> Self {
 		match self {
 			Self::HashMove => Self::Captures,
@@ -56,7 +55,6 @@ impl MoveListStages {
 		}
 	}
 
-	#[inline(always)]
 	pub fn gen_moves<const C: u8>(self, board: &Board, buf: &mut MoveList) {
 		match self {
 			Self::Captures => {
@@ -222,7 +220,6 @@ impl StagedMoveList {
 
 const MAX_HISTORY: i16 = 24576;
 
-#[inline(always)]
 pub fn update_history<const C: u8>(
 	history: &mut [[[i16; 64]; 64]; 2],
 	from: u8,

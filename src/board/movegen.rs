@@ -63,12 +63,11 @@ impl From<u8> for MoveFlag {
 pub struct Move(u16);
 
 impl Move {
-	pub fn new(from: u8, to: u8, flags: MoveFlag) -> Self {
+	pub const fn new(from: u8, to: u8, flags: MoveFlag) -> Self {
 		let packed: u16 = from as u16 | ((to as u16) << 6) | ((flags as u16) << 12);
 		Self(packed)
 	}
 
-	#[inline(always)]
 	pub fn unpack(self) -> (u8, u8, MoveFlag) {
 		(
 			self.0 as u8 & 0x3F,
@@ -77,22 +76,18 @@ impl Move {
 		)
 	}
 
-	#[inline(always)]
 	pub fn get_from(self) -> u8 {
 		self.0 as u8 & 0x3F
 	}
 
-	#[inline(always)]
 	pub fn get_to(self) -> u8 {
 		(self.0 >> 6) as u8 & 0x3F
 	}
 
-	#[inline(always)]
 	pub fn get_flags(self) -> MoveFlag {
 		MoveFlag::from((self.0 >> 12) as u8 & 0xF)
 	}
 
-	#[inline(always)]
 	pub fn is_quiet(self) -> bool {
 		matches!(
 			self.get_flags(),
@@ -107,7 +102,6 @@ impl Move {
 		)
 	}
 
-	#[inline(always)]
 	pub fn is_promotion(self) -> bool {
 		matches!(
 			self.get_flags(),
@@ -122,7 +116,6 @@ impl Move {
 		)
 	}
 
-	#[inline(always)]
 	pub unsafe fn from_u16_unchecked(inner: u16) -> Self {
 		Self(inner)
 	}

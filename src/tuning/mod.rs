@@ -14,14 +14,12 @@ pub struct TuneParam {
 unsafe impl Sync for TuneParam {}
 
 impl TuneParam {
-	#[inline(always)]
 	pub fn set(&self, value: f64) {
 		unsafe {
 			*self.value = value;
 		}
 	}
 
-	#[inline(always)]
 	pub fn get(&self) -> f64 {
 		unsafe { *self.value }
 	}

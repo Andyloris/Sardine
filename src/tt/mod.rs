@@ -34,12 +34,10 @@ pub struct TTEntry {
 }
 
 impl TTEntry {
-	#[inline(always)]
 	pub fn get_score_type(&self) -> ScoreType {
 		ScoreType::from(self.flags & 0x3)
 	}
 
-	#[inline(always)]
 	pub fn get_generation(&self) -> u8 {
 		self.flags >> 2
 	}
