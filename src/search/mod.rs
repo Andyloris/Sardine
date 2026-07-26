@@ -8,7 +8,7 @@ use crate::{
 		movegen::{Move, MoveList},
 		utils::{BLACK, Color, WHITE},
 	},
-	search::move_ordering::StagedMoveList,
+	search::move_ordering::{MoveListStages, StagedMoveList},
 	tt::{ScoreType, TT},
 };
 
@@ -25,6 +25,7 @@ mod node_types {
 struct StackElem {
 	pub in_check: bool,
 	pub static_eval: i16,
+	pub excluded: Move,
 }
 
 pub struct SearchCtx<'a> {
@@ -224,6 +225,7 @@ impl<'a> SearchCtx<'a> {
 
 		let entry = self.tt.probe(&self.board).cloned();
 		if let Some(ref entry) = entry
+			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& entry.depth >= depth
 			&& (depth == 0 || NODE_TYPE != node_types::PV)
 			&& (NODE_TYPE == node_types::CUT || entry.score as i32 <= alpha)
@@ -284,6 +286,7 @@ impl<'a> SearchCtx<'a> {
 
 		// Reverse futility pruning
 		if !in_check
+			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& NODE_TYPE != node_types::PV
 			&& static_eval >= beta + 150 * depth.saturating_sub(improving as u8) as i32
 		{
@@ -295,6 +298,7 @@ impl<'a> SearchCtx<'a> {
 			let r = 3 + depth / 3 + improving as u8;
 			if !in_check
 				&& depth >= 2
+				&& self.stack[ply_from_root as usize].excluded == Move::default()
 				&& match self.board.get_turn() {
 					Color::White => self.board.has_non_pawn_material::<WHITE>(),
 					Color::Black => self.board.has_non_pawn_material::<BLACK>(),
@@ -320,6 +324,7 @@ impl<'a> SearchCtx<'a> {
 		// Futility pruning
 		let mut futile = false;
 		if !in_check
+			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& depth <= 4
 			&& !Self::is_mating_value(alpha)
 			&& !Self::is_mating_value(beta)
@@ -357,6 +362,35 @@ impl<'a> SearchCtx<'a> {
 		}
 		.copied()
 		{
+			let mut r: i8 = 1;
+			if m == self.stack[ply_from_root as usize].excluded {
+				continue;
+			}
+
+			if self.stack[ply_from_root as usize].excluded == Move::default()
+				&& let Some(entry) = &entry
+				&& depth >= 8
+				&& ordered_move_list.stage() == MoveListStages::HashMove
+				&& entry.depth >= depth.saturating_sub(3)
+				&& entry.get_score_type() != ScoreType::Upper
+			{
+				self.stack[ply_from_root as usize].excluded = m;
+				let singular_beta = entry.score as i32 - depth as i32;
+				let singular_score = self.negamax::<NODE_TYPE>(
+					(depth - 1) / 2,
+					ply_from_root,
+					singular_beta - 1,
+					singular_beta,
+				)?;
+				self.stack[ply_from_root as usize].excluded = Move::default();
+
+				if singular_score < singular_beta {
+					r -= 1;
+				} else if entry.score as i32 >= beta {
+					r += 3;
+				}
+			}
+
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
 				Color::White => self.board.do_move::<WHITE>(&m),
@@ -390,7 +424,6 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			let mut r: i8 = 1;
 			// Late move reductions (LMR)
 			if (depth >= 3) && (num_legal_moves > 0) {
 				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i8;
