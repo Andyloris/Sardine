@@ -4,7 +4,6 @@ use shakmaty::{Chess, Position, fen::Fen};
 use crate::{
 	board::{
 		Board,
-		eval::MATERIAL_WEIGHTS,
 		movegen::{Move, MoveFlag, MoveList, move_gen_stages},
 		utils::{BLACK, Bitboard, Color, Piece, Squares, WHITE},
 	},
@@ -146,7 +145,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 	let diffs = gen_diffs(&correct_moves, &my_moves);
 	let mut failed = false;
 
-	if diffs.0.len() != 0 {
+	if diffs.0.is_empty() {
 		print!("Reached problematic position with pv: ");
 		for pv_moves in pv.iter() {
 			print!("{} ", pv_moves);
@@ -160,7 +159,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 		failed = true;
 	}
 
-	if diffs.1.len() != 0 {
+	if diffs.1.is_empty() {
 		if !failed {
 			print!("Reached problematic position with pv: ");
 			for pv_moves in pv.iter() {

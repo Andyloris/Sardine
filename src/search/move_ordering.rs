@@ -91,11 +91,11 @@ impl StagedMoveList {
 		};
 
 		if let Some(hash_move) = hash_move
+			&& !(only_captures && hash_move.is_quiet())
 			&& board.is_pseudo_legal::<C>(&hash_move)
 		{
 			res.cur_move_list.push(hash_move);
 		}
-
 		res
 	}
 
@@ -131,10 +131,10 @@ impl StagedMoveList {
 					score += 1000000;
 				}
 
-				if let Some(killers) = killers {
-					if *m == killers[0] || *m == killers[1] {
-						score += 1000000;
-					}
+				if let Some(killers) = killers
+					&& (*m == killers[0] || *m == killers[1])
+				{
+					score += 1000000;
 				}
 
 				if let Some(history) = history {

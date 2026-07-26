@@ -18,7 +18,7 @@ pub struct UndoInfo {
 
 impl Board {
 	pub fn do_null_move(&mut self) -> UndoInfo {
-		let mut undo_info = UndoInfo {
+		let undo_info = UndoInfo {
 			victim: None,
 			en_passant: self.en_passant,
 			halfmove_clock: self.halfmove_clock,

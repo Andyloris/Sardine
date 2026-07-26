@@ -68,7 +68,12 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
-	fn quiescence_search(&mut self, ply_from_root: u8, mut alpha: i32, beta: i32) -> Option<i32> {
+	fn quiescence_search(
+		&mut self,
+		ply_from_root: u8,
+		mut alpha: i32,
+		mut beta: i32,
+	) -> Option<i32> {
 		self.check_counter += 1;
 
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
@@ -88,6 +93,13 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		self.nodes += 1;
+
+		// MDP
+		alpha = alpha.max(-IMMEDIATE_MATE_SCORE + ply_from_root as i32);
+		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32);
+		if alpha >= beta {
+			return Some(alpha);
+		}
 
 		let is_in_check = match self.board.get_turn() {
 			Color::White => self.board.is_in_check::<WHITE>(),

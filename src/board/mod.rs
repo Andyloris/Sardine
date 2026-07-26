@@ -43,24 +43,12 @@ impl Board {
 		self.turn
 	}
 
-	pub const fn get_friendly_bb<const C: u8>(&self) -> u64 {
-		self.pieces_by_color[C as usize]
-	}
-
 	pub const fn get_opponent_bb<const C: u8>(&self) -> u64 {
 		self.pieces_by_color[(C ^ 1) as usize]
 	}
 
-	pub fn get_num_pieces<const C: u8>(&self, piece: Piece) -> usize {
-		self.pieces[C as usize][piece as usize].count_ones() as usize
-	}
-
 	pub const fn get_hash(&self) -> u64 {
 		self.zobrist
-	}
-
-	pub fn get_bb(&self, PieceColorPair(piece, color): PieceColorPair) -> u64 {
-		self.pieces[color as usize][piece as usize]
 	}
 
 	pub fn has_non_pawn_material<const C: u8>(&self) -> bool {

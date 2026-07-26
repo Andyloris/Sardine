@@ -1,4 +1,3 @@
-use core::simd::{self, Simd, num::*};
 use std::fmt::Display;
 
 pub const A_FILE: u64 = 0x0101010101010101;
@@ -141,9 +140,9 @@ pub enum Piece {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PieceColorPair(pub Piece, pub Color);
 
-impl Into<char> for PieceColorPair {
-	fn into(self) -> char {
-		match (self.0, self.1) {
+impl From<PieceColorPair> for char {
+	fn from(val: PieceColorPair) -> Self {
+		match (val.0, val.1) {
 			(Piece::Pawn, Color::White) => 'P',
 			(Piece::Pawn, Color::Black) => 'p',
 			(Piece::Knight, Color::White) => 'N',
