@@ -97,7 +97,7 @@ impl<'a> SearchCtx<'a> {
 
 		// MDP
 		alpha = alpha.max(-IMMEDIATE_MATE_SCORE + ply_from_root as i32);
-		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32);
+		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32 - 1);
 		if alpha >= beta {
 			return Some(alpha);
 		}
@@ -276,7 +276,7 @@ impl<'a> SearchCtx<'a> {
 
 		// MDP
 		alpha = alpha.max(-IMMEDIATE_MATE_SCORE + ply_from_root as i32);
-		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32);
+		beta = beta.min(IMMEDIATE_MATE_SCORE - ply_from_root as i32 - 1);
 		if alpha >= beta {
 			return Some(alpha);
 		}
