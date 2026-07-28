@@ -69,6 +69,14 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
+	fn search_score_to_tt_score(score: i16, ply_from_root: u8) -> i16 {
+		if Self::is_mating_value(score as i32) {
+			(score.abs() + ply_from_root as i16) * score.signum()
+		} else {
+			score
+		}
+	}
+
 	fn quiescence_search(
 		&mut self,
 		ply_from_root: u8,
@@ -288,6 +296,7 @@ impl<'a> SearchCtx<'a> {
 		if !in_check
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& NODE_TYPE != node_types::PV
+			&& !(Self::is_mating_value(beta) && beta < 0)
 			&& static_eval >= beta + 150 * depth.saturating_sub(improving as u8) as i32
 		{
 			return Some(static_eval);
@@ -566,7 +575,10 @@ impl<'a> SearchCtx<'a> {
 			&self.board,
 			best_move,
 			depth,
-			best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+			Self::search_score_to_tt_score(
+				best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+				ply_from_root,
+			),
 			tt_score_type,
 		);
 
