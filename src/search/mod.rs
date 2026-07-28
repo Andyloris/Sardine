@@ -304,7 +304,6 @@ impl<'a> SearchCtx<'a> {
 
 		// NMP
 		{
-			let r = 3 + depth / 3 + improving as u8;
 			if !in_check
 				&& depth >= 2
 				&& self.stack[ply_from_root as usize].excluded == Move::default()
@@ -314,10 +313,11 @@ impl<'a> SearchCtx<'a> {
 				} && NODE_TYPE == node_types::CUT
 				&& static_eval >= beta
 			{
+				let r = 3 + depth as i32 / 3 + improving as i32 + ((static_eval - beta) / 128);
 				self.stack[ply_from_root as usize + 1].in_check = false;
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::CUT }>(
-					depth.saturating_sub(r),
+					depth.saturating_sub(r.min(255) as u8),
 					ply_from_root + 1,
 					-beta,
 					-beta + 1,
