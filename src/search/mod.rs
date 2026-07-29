@@ -24,6 +24,7 @@ mod node_types {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct StackElem {
 	pub in_check: bool,
+	pub history_draw: bool,
 	pub static_eval: i16,
 	pub excluded: Move,
 }
@@ -213,8 +214,10 @@ impl<'a> SearchCtx<'a> {
 		self.seldepth = self.seldepth.max(ply_from_root);
 		self.check_counter += 1;
 
+		self.stack[ply_from_root as usize].history_draw = false;
 		if self.board.detect_repetition() || self.board.fifty_moves_rule() {
 			// Draw score
+			self.stack[ply_from_root as usize].history_draw = true;
 			return Some(0);
 		}
 
@@ -378,9 +381,10 @@ impl<'a> SearchCtx<'a> {
 
 			if self.stack[ply_from_root as usize].excluded == Move::default()
 				&& let Some(entry) = &entry
-				&& depth >= 8
 				&& ordered_move_list.stage() == MoveListStages::HashMove
+				&& depth >= 8
 				&& entry.depth >= depth.saturating_sub(3)
+				&& !Self::is_mating_value(entry.score as i32)
 				&& entry.get_score_type() != ScoreType::Upper
 			{
 				self.stack[ply_from_root as usize].excluded = m;
@@ -496,6 +500,8 @@ impl<'a> SearchCtx<'a> {
 			if score > best_value {
 				best_value = score;
 				best_move = m;
+				self.stack[ply_from_root as usize].history_draw =
+					score == 0 && self.stack[ply_from_root as usize + 1].history_draw;
 			}
 
 			if score >= alpha {
@@ -571,16 +577,18 @@ impl<'a> SearchCtx<'a> {
 			ScoreType::Exact
 		};
 
-		self.tt.add_entry(
-			&self.board,
-			best_move,
-			depth,
-			Self::search_score_to_tt_score(
-				best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-				ply_from_root,
-			),
-			tt_score_type,
-		);
+		if !self.stack[ply_from_root as usize].history_draw {
+			self.tt.add_entry(
+				&self.board,
+				best_move,
+				depth,
+				Self::search_score_to_tt_score(
+					best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+					ply_from_root,
+				),
+				tt_score_type,
+			);
+		}
 
 		Some(best_value)
 	}
