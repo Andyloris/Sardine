@@ -360,7 +360,7 @@ impl<'a> SearchCtx<'a> {
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
-		let lmp_threshold = 3 + depth as usize * depth as usize;
+		let lmp_threshold = 3 + (depth as usize * depth as usize) / (2 - improving as usize);
 		while let Some(m) = match self.board.get_turn() {
 			Color::White => ordered_move_list.pick_move::<WHITE>(
 				&self.board,
