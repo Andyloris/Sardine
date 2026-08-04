@@ -113,7 +113,7 @@ static EG_PSTS: [[i16; 64]; 6] = [
 	EG_KING_TABLE,
 ];
 
-const GAMEPHASE_INCREMENTS: [u8; 6] = [0, 1, 1, 2, 4, 0];
+pub(super) const GAMEPHASE_INCREMENTS: [u8; 6] = [0, 1, 1, 2, 4, 0];
 
 impl Board {
 	pub(super) fn init_evaluation(&mut self) {

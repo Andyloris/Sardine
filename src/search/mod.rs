@@ -221,6 +221,10 @@ impl<'a> SearchCtx<'a> {
 			return Some(0);
 		}
 
+		if self.board.draw_by_insufficient_material() {
+			return Some(0);
+		}
+
 		if !self.stop_search
 			&& self.check_counter.is_multiple_of(TIMER_CHECK_INTERVAL)
 			&& self.search_start.elapsed().as_millis() as u64 >= self.allocated_time_millis

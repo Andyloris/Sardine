@@ -11,7 +11,11 @@ mod zobrist;
 use std::{fmt::Display, num::NonZero};
 
 use crate::board::{
-	utils::{Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square},
+	eval::GAMEPHASE_INCREMENTS,
+	utils::{
+		BLACK_SQUARES, Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square,
+		WHITE_SQUARES,
+	},
 	zobrist::ZobristDelta,
 };
 
@@ -258,6 +262,49 @@ impl Board {
 
 	pub fn get_halfmove_clock(&self) -> usize {
 		self.halfmove_clock
+	}
+
+	pub fn draw_by_insufficient_material(&self) -> bool {
+		// Check if no pawns since gamephase ignores pawns
+		if (self.pieces[Color::White as usize][Piece::Pawn as usize]
+			| self.pieces[Color::Black as usize][Piece::Pawn as usize])
+			!= 0
+		{
+			return false;
+		}
+
+		// The position is a draw by insufficient material if
+		// 1. Only kings on the board
+		if self.gamephase == 0 {
+			return true;
+		}
+
+		// 2. Only one minor piece on the board
+		if (self.gamephase == GAMEPHASE_INCREMENTS[Piece::Bishop as usize])
+			|| (self.gamephase == GAMEPHASE_INCREMENTS[Piece::Knight as usize])
+		{
+			return true;
+		}
+
+		// 3. Only two bishops of the same color
+		if self.gamephase == 2 * GAMEPHASE_INCREMENTS[Piece::Bishop as usize]
+			&& (self.pieces[Color::White as usize][Piece::Rook as usize]
+				| self.pieces[Color::Black as usize][Piece::Rook as usize])
+				== 0
+		{
+			let bishops = self.pieces[Color::White as usize][Piece::Bishop as usize]
+				| self.pieces[Color::Black as usize][Piece::Bishop as usize];
+			if self.pieces[Color::White as usize][Piece::Bishop as usize] == 0
+				|| self.pieces[Color::Black as usize][Piece::Bishop as usize] == 0
+			{
+				return false;
+			}
+
+			return ((bishops & WHITE_SQUARES) == bishops)
+				|| ((bishops & BLACK_SQUARES) == bishops);
+		}
+
+		false
 	}
 }
 
