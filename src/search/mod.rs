@@ -254,13 +254,18 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 
+		let in_check = self.stack[ply_from_root as usize].in_check;
+		// Check extension
+		if in_check {
+			depth += 1;
+		}
+
 		if depth == 0 {
 			return self.quiescence_search(ply_from_root, alpha, beta);
 		}
 
 		let hash_move = entry.as_ref().map(|e| e.best_move);
 
-		let in_check = self.stack[ply_from_root as usize].in_check;
 		let static_eval = if !in_check {
 			self.board.eval_objective() as i32
 				* match self.board.get_turn() {
@@ -283,11 +288,6 @@ impl<'a> SearchCtx<'a> {
 		} else {
 			true // ToDo: try returning true here someday
 		};
-
-		// Check extension
-		if in_check {
-			depth += 1;
-		}
 
 		// MDP
 		alpha = alpha.max(-IMMEDIATE_MATE_SCORE + ply_from_root as i32);
