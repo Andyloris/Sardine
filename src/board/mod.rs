@@ -265,7 +265,7 @@ impl Board {
 	}
 
 	pub fn draw_by_insufficient_material(&self) -> bool {
-		// Check if no pawns since gamephase ignores pawns
+		/*// Check if no pawns since gamephase ignores pawns
 		if (self.pieces[Color::White as usize][Piece::Pawn as usize]
 			| self.pieces[Color::Black as usize][Piece::Pawn as usize])
 			!= 0
@@ -302,9 +302,47 @@ impl Board {
 
 			return ((bishops & WHITE_SQUARES) == bishops)
 				|| ((bishops & BLACK_SQUARES) == bishops);
+		}*/
+
+		if (self.pieces[Color::White as usize][Piece::Pawn as usize]
+			| self.pieces[Color::Black as usize][Piece::Pawn as usize]
+			| self.pieces[Color::White as usize][Piece::Rook as usize]
+			| self.pieces[Color::Black as usize][Piece::Rook as usize]
+			| self.pieces[Color::White as usize][Piece::Queen as usize]
+			| self.pieces[Color::Black as usize][Piece::Queen as usize])
+			!= 0
+		{
+			return false;
 		}
 
-		false
+		let wbishops = self.pieces[Color::White as usize][Piece::Bishop as usize];
+		let bbishops = self.pieces[Color::Black as usize][Piece::Bishop as usize];
+		let wknights = self.pieces[Color::White as usize][Piece::Knight as usize];
+		let bknights = self.pieces[Color::Black as usize][Piece::Knight as usize];
+
+		match (
+			wbishops.count_ones(),
+			bbishops.count_ones(),
+			wknights.count_ones(),
+			bknights.count_ones(),
+		) {
+			(0, 0, 0, 0) => true,
+			(1, 0, 0, 0) => true,
+			(0, 1, 0, 0) => true,
+			(0, 0, 1, 0) => true,
+			(0, 0, 0, 1) => true,
+			(2, 0, 0, 0) => {
+				((wbishops & WHITE_SQUARES) == wbishops) || ((wbishops & BLACK_SQUARES) == wbishops)
+			}
+			(0, 2, 0, 0) => {
+				((bbishops & WHITE_SQUARES) == bbishops) || ((bbishops & BLACK_SQUARES) == bbishops)
+			}
+			(1, 1, 0, 0) => {
+				let bishops = wbishops | bbishops;
+				((bishops & WHITE_SQUARES) == bishops) || ((bishops & BLACK_SQUARES) == bishops)
+			}
+			_ => false,
+		}
 	}
 }
 
