@@ -233,7 +233,12 @@ impl Board {
 			Color::Black => -Self::TEMPO_BONUS,
 		};
 
-		let eval = material as i16 + tempo as i16;
+		let mut eval = material as i16 + tempo as i16;
+
+		// Scale to zero when close to 50 moves rule
+		if self.halfmove_clock >= 80 {
+			eval = ((eval as i32 * (100 - self.halfmove_clock.min(100) as i32)) / 20) as i16;
+		}
 
 		// Evaluation rounding to improve alpha-beta effectiveness while ignoring subtle and noisy
 		// positional differences
