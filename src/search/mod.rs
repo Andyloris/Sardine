@@ -42,6 +42,7 @@ pub struct SearchCtx<'a> {
 	history: [[[i16; 64]; 64]; 2],
 	killers: [[Move; 2]; 256],
 	stack: [StackElem; 256],
+	pv_array: [Move; 257 * 256 / 2],
 }
 
 impl<'a> SearchCtx<'a> {
@@ -57,8 +58,9 @@ impl<'a> SearchCtx<'a> {
 			stop_search: false,
 			nodes: 0,
 			history: [[[0; 64]; 64]; 2],
-			killers: [[Move::default(); 2]; 256],
+			killers: [[Move::default(); 2]; _],
 			stack: core::array::from_fn(|_| Default::default()),
+			pv_array: [Move::default(); _],
 		}
 	}
 
@@ -210,7 +212,11 @@ impl<'a> SearchCtx<'a> {
 		ply_from_root: u8,
 		mut alpha: i32,
 		mut beta: i32,
+		pv_index: usize,
 	) -> Option<i32> {
+		self.pv_array[pv_index] = Move::default();
+		let pv_next_index = pv_index + 256 - ply_from_root as usize;
+
 		self.seldepth = self.seldepth.max(ply_from_root);
 		self.check_counter += 1;
 
@@ -328,6 +334,7 @@ impl<'a> SearchCtx<'a> {
 					ply_from_root + 1,
 					-beta,
 					-beta + 1,
+					pv_next_index,
 				)?;
 				self.board.undo_null_move(undo_info);
 
@@ -399,6 +406,7 @@ impl<'a> SearchCtx<'a> {
 					ply_from_root,
 					singular_beta - 1,
 					singular_beta,
+					pv_next_index,
 				)?;
 				self.stack[ply_from_root as usize].excluded = Move::default();
 
@@ -457,6 +465,7 @@ impl<'a> SearchCtx<'a> {
 							ply_from_root + 1,
 							-beta,
 							-alpha,
+							pv_next_index,
 						)?
 					}
 					node_types::ALL => {
@@ -465,6 +474,7 @@ impl<'a> SearchCtx<'a> {
 							ply_from_root + 1,
 							-beta,
 							-alpha,
+							pv_next_index,
 						)?
 					}
 					_ => {
@@ -473,6 +483,7 @@ impl<'a> SearchCtx<'a> {
 							ply_from_root + 1,
 							-beta,
 							-alpha,
+							pv_next_index,
 						)?
 					}
 				}
@@ -482,6 +493,7 @@ impl<'a> SearchCtx<'a> {
 					ply_from_root + 1,
 					-alpha - 1,
 					-alpha,
+					pv_next_index,
 				)?;
 				if score > alpha && NODE_TYPE == node_types::PV {
 					score = -self.negamax::<{ node_types::PV }>(
@@ -489,6 +501,7 @@ impl<'a> SearchCtx<'a> {
 						ply_from_root + 1,
 						-beta,
 						-alpha,
+						pv_next_index,
 					)?;
 				}
 			}
@@ -511,6 +524,14 @@ impl<'a> SearchCtx<'a> {
 				best_move = m;
 				self.stack[ply_from_root as usize].history_draw =
 					score == 0 && self.stack[ply_from_root as usize + 1].history_draw;
+				self.pv_array[pv_index] = m;
+				for i in 0..(256 - ply_from_root as usize - 1) {
+					let src = self.pv_array[pv_next_index + i];
+					self.pv_array[pv_index + i + 1] = src;
+					if src == Move::default() {
+						break;
+					}
+				}
 			}
 
 			if score >= alpha {
@@ -617,25 +638,38 @@ impl<'a> SearchCtx<'a> {
 		best_move: Move,
 		nodes: u64,
 		search_start: Instant,
+		pv: &[Move],
 	) {
 		let search_time = search_start.elapsed().as_millis().max(1);
 		let nps = (nodes as u128 * 1000) / search_time;
+		let mut pv_string = String::new();
+		for m in pv {
+			if *m == Move::default() {
+				break;
+			}
+
+			pv_string = format!("{}{} ", pv_string, m);
+		}
+
 		if Self::is_mating_value(score) {
 			let dtm = Self::get_dtm_from_score(score) * score.signum();
 			println!(
-				"info depth {} seldepth {} score mate {} pv {} nodes {} nps {} time {}",
-				depth, seldepth, dtm, best_move, nodes, nps, search_time
+				"info depth {} seldepth {} score mate {} pv {}nodes {} nps {} time {}",
+				depth, seldepth, dtm, pv_string, nodes, nps, search_time
 			);
 			return;
 		}
 
 		println!(
-			"info depth {} seldepth {} score cp {} pv {} nodes {} nps {} time {}",
-			depth, seldepth, score, best_move, nodes, nps, search_time
+			"info depth {} seldepth {} score cp {} pv {}nodes {} nps {} time {}",
+			depth, seldepth, score, pv_string, nodes, nps, search_time
 		);
 	}
 
 	fn bestmove(&mut self, depth: u8, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
+		self.pv_array[0] = Move::default();
+		let pv_next_index = 256usize;
+
 		alpha = alpha.max(-IMMEDIATE_MATE_SCORE);
 		beta = beta.min(IMMEDIATE_MATE_SCORE);
 		let alpha_orig = alpha;
@@ -746,11 +780,29 @@ impl<'a> SearchCtx<'a> {
 
 			let mut score: i32;
 			if num_legal_moves == 0 {
-				score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
+				score = -self.negamax::<{ node_types::PV }>(
+					depth - 1,
+					1,
+					-beta,
+					-alpha,
+					pv_next_index,
+				)?;
 			} else {
-				score = -self.negamax::<{ node_types::CUT }>(depth - 1, 1, -alpha - 1, -alpha)?;
+				score = -self.negamax::<{ node_types::CUT }>(
+					depth - 1,
+					1,
+					-alpha - 1,
+					-alpha,
+					pv_next_index,
+				)?;
 				if score > alpha {
-					score = -self.negamax::<{ node_types::PV }>(depth - 1, 1, -beta, -alpha)?;
+					score = -self.negamax::<{ node_types::PV }>(
+						depth - 1,
+						1,
+						-beta,
+						-alpha,
+						pv_next_index,
+					)?;
 				}
 			}
 
@@ -765,6 +817,14 @@ impl<'a> SearchCtx<'a> {
 			if score > best_value {
 				best_move = *m;
 				best_value = score;
+				self.pv_array[0] = *m;
+				for i in 0..(256 - 1) {
+					let src = self.pv_array[pv_next_index + i];
+					self.pv_array[i + 1] = src;
+					if src == Move::default() {
+						break;
+					}
+				}
 			}
 
 			if score >= alpha {
@@ -825,6 +885,7 @@ impl<'a> SearchCtx<'a> {
 				search_info.0,
 				self.nodes,
 				self.search_start,
+				&self.pv_array[0..256],
 			);
 			return Some(search_info);
 		}
