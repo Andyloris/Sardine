@@ -830,6 +830,10 @@ impl<'a> SearchCtx<'a> {
 			if score >= alpha {
 				alpha = score;
 			}
+
+			if alpha >= beta {
+				break;
+			}
 		}
 
 		if !self.stop_search {
