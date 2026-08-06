@@ -1,6 +1,7 @@
 use crate::board::{
 	Board,
 	attacks::{get_king_attacks, get_knight_attacks, get_pawn_attacks, get_sliding_attacks},
+	movegen::{Move, MoveFlag},
 	utils::{BLACK, Color, NUM_PIECES, PIECES, Piece, PieceColorPair, WHITE, clear_lsb},
 };
 
@@ -314,5 +315,99 @@ impl Board {
 		}
 
 		gain[0]
+	}
+
+	pub fn see_ge(&self, m: Move, threshold: i16) -> bool {
+		let (from, to, flags) = m.unpack();
+		if m.is_promotion()
+			|| matches!(
+				flags,
+				MoveFlag::KCastle | MoveFlag::QCastle | MoveFlag::EpCaptures
+			) {
+			return 0 > threshold;
+		}
+
+		let victim = match self.turn {
+			Color::White => self.get_piece_at_square::<WHITE>(from),
+			Color::Black => self.get_piece_at_square::<BLACK>(from),
+		}
+		.unwrap_or(Piece::Pawn);
+
+		let move_value = if m.is_quiet() {
+			0
+		} else {
+			let target = match self.turn {
+				Color::White => self.get_piece_at_square::<BLACK>(to),
+				Color::Black => self.get_piece_at_square::<WHITE>(to),
+			}
+			.unwrap_or(Piece::Pawn);
+			MATERIAL_WEIGHTS[target as usize]
+		};
+
+		let mut swap = move_value - threshold;
+		if swap < 0 {
+			return false;
+		}
+
+		swap -= MATERIAL_WEIGHTS[victim as usize];
+		if swap >= 0 {
+			return true;
+		}
+
+		let bishops_queens = self.pieces[Color::White as usize][Piece::Bishop as usize]
+			| self.pieces[Color::Black as usize][Piece::Bishop as usize]
+			| self.pieces[Color::White as usize][Piece::Queen as usize]
+			| self.pieces[Color::Black as usize][Piece::Queen as usize];
+
+		let rooks_queens = self.pieces[Color::White as usize][Piece::Rook as usize]
+			| self.pieces[Color::Black as usize][Piece::Rook as usize]
+			| self.pieces[Color::White as usize][Piece::Queen as usize]
+			| self.pieces[Color::Black as usize][Piece::Queen as usize];
+
+		let mut occ = self.occupied ^ (1u64 << from) ^ (1u64 << to);
+		let mut attackers = (self.attacks_to_square_with_occ::<WHITE>(to, &occ)
+			| self.attacks_to_square_with_occ::<BLACK>(to, &occ))
+			& occ;
+
+		let mut turn = match self.turn {
+			Color::White => Color::Black,
+			Color::Black => Color::White,
+		};
+
+		loop {
+			let own_attackers = attackers & self.pieces_by_color[turn as usize];
+			if own_attackers == 0 {
+				break;
+			}
+
+			let mut attacker = Piece::Pawn;
+			let attacker_set = self.get_least_valuable_piece(own_attackers, turn, &mut attacker);
+			occ ^= attacker_set;
+			if matches!(attacker, Piece::Pawn | Piece::Bishop | Piece::Queen) {
+				attackers |= get_sliding_attacks::<true>(to, occ) & bishops_queens;
+			}
+
+			if matches!(attacker, Piece::Rook | Piece::Queen) {
+				attackers |= get_sliding_attacks::<false>(to, occ) & rooks_queens;
+			}
+
+			attackers &= occ;
+			turn = match turn {
+				Color::White => Color::Black,
+				Color::Black => Color::White,
+			};
+
+			swap = -swap - 1 - MATERIAL_WEIGHTS[attacker as usize];
+			if swap >= 0 {
+				if attacker == Piece::King && (attackers & self.pieces_by_color[turn as usize] != 0)
+				{
+					return self.turn == turn;
+				}
+
+				break;
+			}
+		}
+
+		self.turn != turn
 	}
 }

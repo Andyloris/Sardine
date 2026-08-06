@@ -157,6 +157,9 @@ impl<'a> SearchCtx<'a> {
 				Some(&self.killers[ply_from_root as usize]),
 			),
 		} {
+			if !self.board.see_ge(*m, -100) {
+				continue;
+			}
 			//for m in move_list.iter() {
 			let undo_info = match self.board.get_turn() {
 				Color::White => self.board.do_move::<WHITE>(m),
