@@ -99,15 +99,13 @@ impl TT {
 		}
 	}
 
-	pub fn probe(&self, board: &Board) -> Option<&TTEntry> {
+	pub fn probe<const C: u8, const OPP: u8>(&self, board: &Board) -> Option<&TTEntry> {
 		let idx = board.get_hash() % (1 << self.size_exponent as u64);
 		let entry = &self.table[idx as usize];
 		if u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1))
 			== entry.hash
-			&& match board.get_turn() {
-				Color::White => board.is_pseudo_legal::<WHITE>(&entry.best_move),
-				Color::Black => board.is_pseudo_legal::<BLACK>(&entry.best_move),
-			} {
+			&& board.is_pseudo_legal::<C, OPP>(&entry.best_move)
+		{
 			return Some(entry);
 		}
 

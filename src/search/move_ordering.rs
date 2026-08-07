@@ -55,13 +55,18 @@ impl MoveListStages {
 		}
 	}
 
-	pub fn gen_moves<const C: u8>(self, board: &Board, buf: &mut MoveList) {
+	pub fn gen_moves<const C: u8, const OPP: u8>(
+		self,
+		board: &Board,
+		buf: &mut MoveList,
+		checkers_mask: u64,
+	) {
 		match self {
 			Self::Captures => {
-				board.gen_pseudo_legal_captures_in_check::<C>(buf);
+				board.gen_pseudo_legal_captures_in_check::<C, OPP>(buf, checkers_mask);
 			}
 			Self::Quiets => {
-				board.gen_pseudo_legal_quiets_in_check::<C>(buf);
+				board.gen_pseudo_legal_quiets_in_check::<C, OPP>(buf, checkers_mask);
 			}
 			_ => {}
 		};
@@ -75,10 +80,16 @@ pub struct StagedMoveList {
 	current_move_idx: usize,
 	hash_move: Option<Move>,
 	only_captures: bool,
+	checkers_mask: u64,
 }
 
 impl StagedMoveList {
-	pub fn new<const C: u8>(hash_move: Option<Move>, board: &Board, only_captures: bool) -> Self {
+	pub fn new<const C: u8, const OPP: u8>(
+		hash_move: Option<Move>,
+		board: &Board,
+		only_captures: bool,
+		checkers_mask: u64,
+	) -> Self {
 		let mut res = Self {
 			cur_stage: MoveListStages::HashMove,
 			cur_move_list: MoveList::default(),
@@ -86,18 +97,19 @@ impl StagedMoveList {
 			current_move_idx: 0,
 			hash_move,
 			only_captures,
+			checkers_mask,
 		};
 
 		if let Some(hash_move) = hash_move
 			&& !(only_captures && hash_move.is_quiet())
-			&& board.is_pseudo_legal::<C>(&hash_move)
+			&& board.is_pseudo_legal::<C, OPP>(&hash_move)
 		{
 			res.cur_move_list.push(hash_move);
 		}
 		res
 	}
 
-	fn score_move<const C: u8>(
+	fn score_move<const C: u8, const OPP: u8>(
 		&self,
 		board: &Board,
 		m: &Move,
@@ -114,12 +126,7 @@ impl StagedMoveList {
 			MoveListStages::Captures => {
 				let from = board.get_piece_at_square::<C>(from).unwrap();
 				// Not E.P. thanks to short-circuit above. So we must have a victim on the to square
-				let victim = match C ^ 1 {
-					WHITE => board.get_piece_at_square::<WHITE>(to).unwrap(),
-					BLACK => board.get_piece_at_square::<BLACK>(to).unwrap(),
-					_ => Piece::Pawn,
-				};
-
+				let victim = board.get_piece_at_square::<OPP>(to).unwrap();
 				MVV_LVA_LOOKUP[from as usize][victim as usize]
 			}
 
@@ -146,7 +153,7 @@ impl StagedMoveList {
 		}
 	}
 
-	pub fn pick_move<const C: u8>(
+	pub fn pick_move<const C: u8, const OPP: u8>(
 		&mut self,
 		board: &Board,
 		history: Option<&[[[i16; 64]; 64]; 2]>,
@@ -160,31 +167,23 @@ impl StagedMoveList {
 			self.cur_stage = self.cur_stage.next();
 			if self.only_captures && self.cur_stage == MoveListStages::Quiets {
 				self.cur_stage = self.cur_stage.next();
-				return self.pick_move::<C>(board, history, killers);
+				return self.pick_move::<C, OPP>(board, history, killers);
 			}
 
 			let old_list_len = self.cur_move_list.len();
 			self.cur_stage
-				.gen_moves::<C>(board, &mut self.cur_move_list);
+				.gen_moves::<C, OPP>(board, &mut self.cur_move_list, self.checkers_mask);
 
 			for i in old_list_len..self.cur_move_list.len() {
-				self.scores[i] = match board.get_turn() {
-					Color::White => self.score_move::<WHITE>(
-						board,
-						&self.cur_move_list.as_slice()[i],
-						history,
-						killers,
-					),
-					Color::Black => self.score_move::<BLACK>(
-						board,
-						&self.cur_move_list.as_slice()[i],
-						history,
-						killers,
-					),
-				};
+				self.scores[i] = self.score_move::<C, OPP>(
+					board,
+					&self.cur_move_list.as_slice()[i],
+					history,
+					killers,
+				);
 			}
 
-			return self.pick_move::<C>(board, history, killers);
+			return self.pick_move::<C, OPP>(board, history, killers);
 		}
 
 		let mut best_move_idx = self.current_move_idx;
@@ -207,7 +206,7 @@ impl StagedMoveList {
 			&& let Some(hash_move) = self.hash_move
 			&& hash_move == m
 		{
-			return self.pick_move::<C>(board, history, killers);
+			return self.pick_move::<C, OPP>(board, history, killers);
 		}
 
 		Some(&self.cur_move_list.as_slice()[self.current_move_idx - 1])

@@ -47,7 +47,13 @@ impl UCIInstance {
 	}
 
 	fn eval(&self) {
-		println!("{}", self.position.eval_objective());
+		println!(
+			"{}",
+			match self.position.get_turn() {
+				Color::White => self.position.eval_objective::<WHITE>(),
+				Color::Black => self.position.eval_objective::<BLACK>(),
+			}
+		);
 	}
 
 	fn from_lan(&self, lan: String) -> Option<Move> {
@@ -76,10 +82,10 @@ impl UCIInstance {
 		match self.position.get_turn() {
 			Color::White => self
 				.position
-				.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
+				.gen_all_pseudo_legal_moves::<WHITE, BLACK>(&mut move_list),
 			Color::Black => self
 				.position
-				.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
+				.gen_all_pseudo_legal_moves::<BLACK, WHITE>(&mut move_list),
 		};
 
 		let mut possibilities: Vec<Move> = vec![];
@@ -101,8 +107,12 @@ impl UCIInstance {
 
 	fn make_move(&mut self, chess_move: String) -> Option<()> {
 		match self.position.get_turn() {
-			Color::White => self.position.do_move::<WHITE>(&self.from_lan(chess_move)?),
-			Color::Black => self.position.do_move::<BLACK>(&self.from_lan(chess_move)?),
+			Color::White => self
+				.position
+				.do_move::<WHITE, BLACK>(&self.from_lan(chess_move)?),
+			Color::Black => self
+				.position
+				.do_move::<BLACK, WHITE>(&self.from_lan(chess_move)?),
 		};
 		Some(())
 	}

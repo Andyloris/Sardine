@@ -284,13 +284,9 @@ impl Board {
 		}
 	}
 
-	pub fn is_square_attacked<const BY: u8>(&self, sq: u8) -> bool {
+	pub fn is_square_attacked<const BY: u8, const OPP: u8>(&self, sq: u8) -> bool {
 		let pawns = self.pieces[BY as usize][Piece::Pawn as usize];
-		if match BY ^ 1 {
-			WHITE => get_pawn_attacks::<WHITE>(sq) & pawns != 0,
-			BLACK => get_pawn_attacks::<BLACK>(sq) & pawns != 0,
-			_ => false,
-		} {
+		if get_pawn_attacks::<OPP>(sq) & pawns != 0 {
 			return true;
 		}
 
@@ -319,16 +315,12 @@ impl Board {
 		false
 	}
 
-	pub fn is_in_check<const KING_C: u8>(&self) -> bool {
+	pub fn is_in_check<const KING_C: u8, const OPP: u8>(&self) -> bool {
 		let king_sq = self.pieces[KING_C as usize][Piece::King as usize].trailing_zeros() as u8;
-		match KING_C ^ 1 {
-			WHITE => self.is_square_attacked::<WHITE>(king_sq),
-			BLACK => self.is_square_attacked::<BLACK>(king_sq),
-			_ => false,
-		}
+		self.is_square_attacked::<OPP, KING_C>(king_sq)
 	}
 
-	pub fn gen_pseudo_legal_captures<const C: u8>(&self, buf: &mut MoveList) {
+	pub fn gen_pseudo_legal_captures<const C: u8, const OPP: u8>(&self, buf: &mut MoveList) {
 		let targets = self.get_opponent_bb::<C>();
 
 		// PAWNS
@@ -389,11 +381,7 @@ impl Board {
 		);
 
 		if let Some(en_passant) = self.en_passant {
-			let mut en_passant_pawns = match C ^ 1 {
-				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
-				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
-				_ => 0,
-			} & friendly_pawns;
+			let mut en_passant_pawns = get_pawn_attacks::<OPP>(en_passant.get()) & friendly_pawns;
 
 			while en_passant_pawns != 0 {
 				let from = en_passant_pawns.trailing_zeros() as u8;
@@ -441,7 +429,7 @@ impl Board {
 		}
 	}
 
-	pub fn gen_pseudo_legal_quiets<const C: u8>(&self, buf: &mut MoveList) {
+	pub fn gen_pseudo_legal_quiets<const C: u8, const OPP: u8>(&self, buf: &mut MoveList) {
 		// PAWNS
 		let friendly_pawns = self.pieces[C as usize][Piece::Pawn as usize];
 		let promo_pawns = friendly_pawns
@@ -544,17 +532,9 @@ impl Board {
 				_ => 0,
 			};
 
-			let can_castle = match C ^ 1 {
-				WHITE => {
-					!self.is_square_attacked::<WHITE>(rook_sq)
-						&& !self.is_square_attacked::<WHITE>(king_sq)
-				}
-				BLACK => {
-					!self.is_square_attacked::<BLACK>(rook_sq)
-						&& !self.is_square_attacked::<BLACK>(king_sq)
-				}
-				_ => false,
-			} && (self.occupied & KING_CASTLE_MASKS[C as usize] == 0);
+			let can_castle = !self.is_square_attacked::<OPP, C>(rook_sq)
+				&& !self.is_square_attacked::<OPP, C>(king_sq)
+				&& (self.occupied & KING_CASTLE_MASKS[C as usize] == 0);
 
 			if can_castle {
 				let m = Move::new(
@@ -579,17 +559,9 @@ impl Board {
 				_ => 0,
 			};
 
-			let can_castle = match C ^ 1 {
-				WHITE => {
-					!self.is_square_attacked::<WHITE>(rook_sq)
-						&& !self.is_square_attacked::<WHITE>(king_sq)
-				}
-				BLACK => {
-					!self.is_square_attacked::<BLACK>(rook_sq)
-						&& !self.is_square_attacked::<BLACK>(king_sq)
-				}
-				_ => false,
-			} && (self.occupied & QUEEN_CASTLE_MASKS[C as usize] == 0);
+			let can_castle = !self.is_square_attacked::<OPP, C>(rook_sq)
+				&& !self.is_square_attacked::<OPP, C>(king_sq)
+				&& (self.occupied & QUEEN_CASTLE_MASKS[C as usize] == 0);
 
 			if can_castle {
 				let m = Move::new(
@@ -602,7 +574,7 @@ impl Board {
 		}
 	}
 
-	pub fn gen_all_pseudo_legal_moves<const C: u8>(&self, buf: &mut MoveList) {
+	pub fn gen_all_pseudo_legal_moves<const C: u8, const OPP: u8>(&self, buf: &mut MoveList) {
 		let targets = self.get_opponent_bb::<C>();
 
 		// PAWNS
@@ -682,11 +654,7 @@ impl Board {
 		);
 
 		if let Some(en_passant) = self.en_passant {
-			let mut en_passant_pawns = match C ^ 1 {
-				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
-				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
-				_ => 0,
-			} & friendly_pawns;
+			let mut en_passant_pawns = get_pawn_attacks::<OPP>(en_passant.get()) & friendly_pawns;
 
 			while en_passant_pawns != 0 {
 				let from = en_passant_pawns.trailing_zeros() as u8;
@@ -783,17 +751,9 @@ impl Board {
 				_ => 0,
 			};
 
-			let can_castle = match C ^ 1 {
-				WHITE => {
-					!self.is_square_attacked::<WHITE>(rook_sq)
-						&& !self.is_square_attacked::<WHITE>(king_sq)
-				}
-				BLACK => {
-					!self.is_square_attacked::<BLACK>(rook_sq)
-						&& !self.is_square_attacked::<BLACK>(king_sq)
-				}
-				_ => false,
-			} && (self.occupied & KING_CASTLE_MASKS[C as usize] == 0);
+			let can_castle = !self.is_square_attacked::<OPP, C>(rook_sq)
+				&& !self.is_square_attacked::<OPP, C>(king_sq)
+				&& (self.occupied & KING_CASTLE_MASKS[C as usize] == 0);
 
 			if can_castle {
 				let m = Move::new(
@@ -818,17 +778,9 @@ impl Board {
 				_ => 0,
 			};
 
-			let can_castle = match C ^ 1 {
-				WHITE => {
-					!self.is_square_attacked::<WHITE>(rook_sq)
-						&& !self.is_square_attacked::<WHITE>(king_sq)
-				}
-				BLACK => {
-					!self.is_square_attacked::<BLACK>(rook_sq)
-						&& !self.is_square_attacked::<BLACK>(king_sq)
-				}
-				_ => false,
-			} && (self.occupied & QUEEN_CASTLE_MASKS[C as usize] == 0);
+			let can_castle = !self.is_square_attacked::<OPP, C>(rook_sq)
+				&& !self.is_square_attacked::<OPP, C>(king_sq)
+				&& (self.occupied & QUEEN_CASTLE_MASKS[C as usize] == 0);
 
 			if can_castle {
 				let m = Move::new(
@@ -841,48 +793,55 @@ impl Board {
 		}
 	}
 
-	// Also tells us if we are in check
-	pub fn gen_pseudo_legal_captures_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
+	pub fn get_checkers_mask<const C: u8, const OPP: u8>(&self) -> u64 {
+		let king = self.pieces[C as usize][Piece::King as usize];
+		let king_sq = king.trailing_zeros() as u8;
+
+		let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
+		let pawn_checker_mask = match C {
+			WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
+			BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
+			_ => 0,
+		};
+
+		let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
+		let knight_checker_mask = get_knight_attacks(king_sq) & knights;
+
+		let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
+		let king_checker_mask = get_king_attacks(king_sq) & opp_king;
+
+		let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
+			| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+		let bishops_queens_checker_mask =
+			get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
+
+		let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
+			| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
+		let rooks_queens_checker_mask =
+			get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
+		pawn_checker_mask
+			| knight_checker_mask
+			| king_checker_mask
+			| bishops_queens_checker_mask
+			| rooks_queens_checker_mask
+	}
+
+	pub fn gen_pseudo_legal_captures_in_check<const C: u8, const OPP: u8>(
+		&self,
+		buf: &mut MoveList,
+		checkers_mask: u64,
+	) {
 		// When in check: generate all king moves, moves that capture the checker, and moves to the
 		// squares in between us and the checker
 		let targets = self.get_opponent_bb::<C>();
-		let king = self.pieces[C as usize][Piece::King as usize];
-		let king_sq = king.trailing_zeros() as u8;
-		let checkers_mask: u64;
-		{
-			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
-			let pawn_checker_mask = match C {
-				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
-				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
-				_ => 0,
-			};
-
-			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
-			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
-
-			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
-			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
-
-			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let bishops_queens_checker_mask =
-				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
-
-			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let rooks_queens_checker_mask =
-				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
-			checkers_mask = pawn_checker_mask
-				| knight_checker_mask
-				| king_checker_mask
-				| bishops_queens_checker_mask
-				| rooks_queens_checker_mask;
-		}
 
 		if checkers_mask == 0 {
-			self.gen_pseudo_legal_captures::<{ C }>(buf);
-			return false;
+			self.gen_pseudo_legal_captures::<C, OPP>(buf);
+			return;
 		}
+
+		let king = self.pieces[C as usize][Piece::King as usize];
+		let king_sq = king.trailing_zeros() as u8;
 
 		let king_attacks = get_king_attacks(king_sq);
 		let king_attack_targets = king_attacks & targets;
@@ -890,7 +849,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return true;
+			return;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -961,11 +920,8 @@ impl Board {
 		if let Some(en_passant) = self.en_passant
 			&& en_passant.get().wrapping_add_signed(en_passant_victim_off) == checker_sq
 		{
-			let mut en_passant_pawns = match C ^ 1 {
-				WHITE => get_pawn_attacks::<{ WHITE }>(en_passant.get()),
-				BLACK => get_pawn_attacks::<{ BLACK }>(en_passant.get()),
-				_ => 0,
-			} & friendly_pawns;
+			let mut en_passant_pawns =
+				get_pawn_attacks::<{ OPP }>(en_passant.get()) & friendly_pawns;
 
 			while en_passant_pawns != 0 {
 				let from = en_passant_pawns.trailing_zeros() as u8;
@@ -1003,49 +959,21 @@ impl Board {
 			let rook_targets = get_sliding_attacks::<false>(from, self.occupied) & checkers_mask;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Captures, buf);
 		}
-
-		true
 	}
 
-	pub fn gen_pseudo_legal_quiets_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
+	pub fn gen_pseudo_legal_quiets_in_check<const C: u8, const OPP: u8>(
+		&self,
+		buf: &mut MoveList,
+		checkers_mask: u64,
+	) {
 		// When in check: generate all king moves, moves that capture the checker, and moves to the
 		// squares in between us and the checker
 		let king = self.pieces[C as usize][Piece::King as usize];
 		let king_sq = king.trailing_zeros() as u8;
-		let checkers_mask: u64;
-		{
-			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
-			let pawn_checker_mask = match C {
-				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
-				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
-				_ => 0,
-			};
-
-			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
-			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
-
-			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
-			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
-
-			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let bishops_queens_checker_mask =
-				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
-
-			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let rooks_queens_checker_mask =
-				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
-			checkers_mask = pawn_checker_mask
-				| knight_checker_mask
-				| king_checker_mask
-				| bishops_queens_checker_mask
-				| rooks_queens_checker_mask;
-		}
 
 		if checkers_mask == 0 {
-			self.gen_pseudo_legal_quiets::<{ C }>(buf);
-			return false;
+			self.gen_pseudo_legal_quiets::<C, OPP>(buf);
+			return;
 		}
 
 		let king_attacks = get_king_attacks(king_sq);
@@ -1054,7 +982,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return true;
+			return;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -1152,48 +1080,20 @@ impl Board {
 				get_sliding_attacks::<false>(from, self.occupied) & target_squares_mask;
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
 		}
-
-		true
 	}
 
-	pub fn gen_all_pseudo_legal_moves_in_check<const C: u8>(&self, buf: &mut MoveList) -> bool {
+	pub fn gen_all_pseudo_legal_moves_in_check<const C: u8, const OPP: u8>(
+		&self,
+		buf: &mut MoveList,
+		checkers_mask: u64,
+	) {
 		let targets = self.get_opponent_bb::<C>();
 		let king = self.pieces[C as usize][Piece::King as usize];
 		let king_sq = king.trailing_zeros() as u8;
-		let checkers_mask: u64;
-		{
-			let pawns = self.pieces[(C ^ 1) as usize][Piece::Pawn as usize];
-			let pawn_checker_mask = match C {
-				WHITE => get_pawn_attacks::<WHITE>(king_sq) & pawns,
-				BLACK => get_pawn_attacks::<BLACK>(king_sq) & pawns,
-				_ => 0,
-			};
-
-			let knights = self.pieces[(C ^ 1) as usize][Piece::Knight as usize];
-			let knight_checker_mask = get_knight_attacks(king_sq) & knights;
-
-			let opp_king = self.pieces[(C ^ 1) as usize][Piece::King as usize];
-			let king_checker_mask = get_king_attacks(king_sq) & opp_king;
-
-			let bishops_queens = self.pieces[(C ^ 1) as usize][Piece::Bishop as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let bishops_queens_checker_mask =
-				get_sliding_attacks::<true>(king_sq, self.occupied) & bishops_queens;
-
-			let rooks_queens = self.pieces[(C ^ 1) as usize][Piece::Rook as usize]
-				| self.pieces[(C ^ 1) as usize][Piece::Queen as usize];
-			let rooks_queens_checker_mask =
-				get_sliding_attacks::<false>(king_sq, self.occupied) & rooks_queens;
-			checkers_mask = pawn_checker_mask
-				| knight_checker_mask
-				| king_checker_mask
-				| bishops_queens_checker_mask
-				| rooks_queens_checker_mask;
-		}
 
 		if checkers_mask == 0 {
-			self.gen_all_pseudo_legal_moves::<{ C }>(buf);
-			return false;
+			self.gen_all_pseudo_legal_moves::<C, OPP>(buf);
+			return;
 		}
 
 		let king_attacks = get_king_attacks(king_sq);
@@ -1204,7 +1104,7 @@ impl Board {
 
 		// If in double check, stop at king moves
 		if checkers_mask.count_ones() >= 2 {
-			return true;
+			return;
 		}
 
 		let checker_sq: u8 = checkers_mask.trailing_zeros() as u8;
@@ -1380,35 +1280,34 @@ impl Board {
 			Self::serialize_with_to_bb(from, rook_attack_targets, MoveFlag::Captures, buf);
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
 		}
-
-		true
 	}
 
-	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8>(&self, buf: &mut MoveList) {
+	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8, const OPP: u8>(
+		&self,
+		buf: &mut MoveList,
+	) {
 		match S {
-			move_gen_stages::CAPTURES => self.gen_pseudo_legal_captures::<C>(buf),
-			move_gen_stages::QUIETS => self.gen_pseudo_legal_quiets::<C>(buf),
-			move_gen_stages::ALL => self.gen_all_pseudo_legal_moves::<C>(buf),
+			move_gen_stages::CAPTURES => self.gen_pseudo_legal_captures::<C, OPP>(buf),
+			move_gen_stages::QUIETS => self.gen_pseudo_legal_quiets::<C, OPP>(buf),
+			move_gen_stages::ALL => self.gen_all_pseudo_legal_moves::<C, OPP>(buf),
 			_ => {}
 		};
 	}
 
-	pub fn gen_all_pseudo_legal_moves_non_monomorphizing(&self, buf: &mut MoveList) -> bool {
-		// Integrates a check if no in check anyways
+	pub fn gen_all_pseudo_legal_moves_no_context(&self, buf: &mut MoveList) {
 		match self.turn {
-			Color::White => self.gen_all_pseudo_legal_moves_in_check::<WHITE>(buf),
-			Color::Black => self.gen_all_pseudo_legal_moves_in_check::<BLACK>(buf),
+			Color::White => {
+				let checkers_mask = self.get_checkers_mask::<WHITE, BLACK>();
+				self.gen_all_pseudo_legal_moves_in_check::<WHITE, BLACK>(buf, checkers_mask)
+			}
+			Color::Black => {
+				let checkers_mask = self.get_checkers_mask::<BLACK, WHITE>();
+				self.gen_all_pseudo_legal_moves_in_check::<BLACK, WHITE>(buf, checkers_mask)
+			}
 		}
 	}
 
-	pub fn gen_pseudo_legal_captures_non_monomorphizing(&self, buf: &mut MoveList) -> bool {
-		match self.turn {
-			Color::White => self.gen_pseudo_legal_captures_in_check::<WHITE>(buf),
-			Color::Black => self.gen_pseudo_legal_captures_in_check::<BLACK>(buf),
-		}
-	}
-
-	pub fn is_pseudo_legal<const C: u8>(&self, m: &Move) -> bool {
+	pub fn is_pseudo_legal<const C: u8, const OPP: u8>(&self, m: &Move) -> bool {
 		let (from, to, flags) = m.unpack();
 		let from_piece = self.get_piece_at_square::<C>(from);
 		if from_piece.is_none() {
@@ -1469,11 +1368,7 @@ impl Board {
 					&& (from == king_square)
 					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
 					&& (self.occupied & KING_CASTLE_MASKS[C as usize]) == 0
-					&& match C {
-						WHITE => !self.is_square_attacked::<BLACK>(rook_target_square),
-						BLACK => !self.is_square_attacked::<WHITE>(rook_target_square),
-						_ => false,
-					}
+					&& !self.is_square_attacked::<OPP, C>(rook_target_square)
 			}
 
 			MoveFlag::QCastle => {
@@ -1490,11 +1385,7 @@ impl Board {
 					&& (from == king_square)
 					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
 					&& (self.occupied & QUEEN_CASTLE_MASKS[C as usize]) == 0
-					&& match C {
-						WHITE => !self.is_square_attacked::<BLACK>(rook_target_square),
-						BLACK => !self.is_square_attacked::<WHITE>(rook_target_square),
-						_ => false,
-					}
+					&& !self.is_square_attacked::<OPP, C>(rook_target_square)
 			}
 
 			MoveFlag::Captures => {

@@ -23,7 +23,7 @@ mod node_types {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct StackElem {
-	pub in_check: bool,
+	pub checkers_mask: u64,
 	pub history_draw: bool,
 	pub static_eval: i16,
 	pub excluded: Move,
@@ -113,11 +113,8 @@ impl<'a> SearchCtx<'a> {
 			return Some(alpha);
 		}
 
-		// ToDo: use the same methodology of using parent results here
-		let is_in_check = match self.board.get_turn() {
-			Color::White => self.board.is_in_check::<WHITE>(),
-			Color::Black => self.board.is_in_check::<BLACK>(),
-		};
+		let checkers_mask = self.board.get_checkers_mask::<C, OPP>();
+		let is_in_check = checkers_mask != 0;
 
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut only_captures = true;
@@ -125,10 +122,11 @@ impl<'a> SearchCtx<'a> {
 			only_captures = false;
 		} else {
 			// Standing pat
-			best_value = self.board.eval_objective() as i32
-				* match self.board.get_turn() {
-					Color::White => 1,
-					Color::Black => -1,
+			best_value = self.board.eval_objective::<C>() as i32
+				* match C {
+					WHITE => 1,
+					BLACK => -1,
+					_ => 0,
 				};
 
 			if best_value >= beta {
@@ -140,29 +138,30 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
-		let mut ordered_move_list = StagedMoveList::new::<C>(None, &self.board, only_captures);
+		let mut ordered_move_list =
+			StagedMoveList::new::<C, OPP>(None, &self.board, only_captures, checkers_mask);
 
 		let mut num_legal_moves = 0;
-		while let Some(m) = ordered_move_list.pick_move::<C>(
+		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
 			Some(&self.history),
 			Some(&self.killers[ply_from_root as usize]),
 		) {
-			if !self.board.see_ge(*m, -100) {
+			if !self.board.see_ge::<C, OPP>(*m, -100) {
 				continue;
 			}
 			//for m in move_list.iter() {
-			let undo_info = self.board.do_move::<C>(m)?;
+			let undo_info = self.board.do_move::<C, OPP>(m)?;
 
-			if self.board.is_in_check::<C>() {
-				self.board.undo_move::<C>(undo_info, m)?;
+			if self.board.is_in_check::<C, OPP>() {
+				self.board.undo_move::<C, OPP>(undo_info, m)?;
 				continue;
 			}
 			num_legal_moves += 1;
 
 			let score = -self.quiescence_search::<OPP, C>(ply_from_root + 1, -beta, -alpha)?;
 
-			self.board.undo_move::<C>(undo_info, m)?;
+			self.board.undo_move::<C, OPP>(undo_info, m)?;
 
 			// fail-soft
 			if score > best_value {
@@ -224,7 +223,7 @@ impl<'a> SearchCtx<'a> {
 
 		self.nodes += 1;
 
-		let entry = self.tt.probe(&self.board).cloned();
+		let entry = self.tt.probe::<C, OPP>(&self.board).cloned();
 		if let Some(ref entry) = entry
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& entry.depth >= depth
@@ -240,9 +239,9 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 
-		let in_check = self.stack[ply_from_root as usize].in_check;
+		let is_in_check = self.stack[ply_from_root as usize].checkers_mask != 0;
 		// Check extension
-		if in_check {
+		if is_in_check {
 			depth += 1;
 		}
 
@@ -252,8 +251,8 @@ impl<'a> SearchCtx<'a> {
 
 		let hash_move = entry.as_ref().map(|e| e.best_move);
 
-		let static_eval = if !in_check {
-			self.board.eval_objective() as i32
+		let static_eval = if !is_in_check {
+			self.board.eval_objective::<C>() as i32
 				* match C {
 					WHITE => 1,
 					BLACK => -1,
@@ -266,11 +265,15 @@ impl<'a> SearchCtx<'a> {
 
 		self.stack[ply_from_root as usize].static_eval = static_eval as i16;
 
-		let improving = if in_check {
+		let improving = if is_in_check {
 			false
-		} else if (ply_from_root >= 2) && (!self.stack[ply_from_root as usize - 2].in_check) {
+		} else if (ply_from_root >= 2)
+			&& (self.stack[ply_from_root as usize - 2].checkers_mask == 0)
+		{
 			static_eval > self.stack[ply_from_root as usize - 2].static_eval as i32
-		} else if (ply_from_root >= 4) && (!self.stack[ply_from_root as usize - 4].in_check) {
+		} else if (ply_from_root >= 4)
+			&& (self.stack[ply_from_root as usize - 4].checkers_mask == 0)
+		{
 			static_eval > self.stack[ply_from_root as usize - 4].static_eval as i32
 		} else {
 			true // ToDo: try returning true here someday
@@ -287,7 +290,7 @@ impl<'a> SearchCtx<'a> {
 		let beta_orig = beta;
 
 		// Reverse futility pruning
-		if !in_check
+		if !is_in_check
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& NODE_TYPE != node_types::PV
 			&& !(Self::is_mating_value(beta) && beta < 0)
@@ -298,7 +301,7 @@ impl<'a> SearchCtx<'a> {
 
 		// NMP
 		{
-			if !in_check
+			if !is_in_check
 				&& depth >= 2
 				&& self.stack[ply_from_root as usize].excluded == Move::default()
 				&& self.board.has_non_pawn_material::<C>()
@@ -306,7 +309,7 @@ impl<'a> SearchCtx<'a> {
 				&& static_eval >= beta
 			{
 				let r = 3 + depth as i32 / 3 + improving as i32 + ((static_eval - beta) / 128);
-				self.stack[ply_from_root as usize + 1].in_check = false;
+				self.stack[ply_from_root as usize + 1].checkers_mask = 0;
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::CUT }, { OPP }, { C }>(
 					depth.saturating_sub(r.min(255) as u8),
@@ -325,7 +328,7 @@ impl<'a> SearchCtx<'a> {
 
 		// Futility pruning
 		let mut futile = false;
-		if !in_check
+		if !is_in_check
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& depth <= 4
 			&& !Self::is_mating_value(alpha)
@@ -340,7 +343,12 @@ impl<'a> SearchCtx<'a> {
 			depth -= 1;
 		}
 
-		let mut ordered_move_list = StagedMoveList::new::<C>(hash_move, &self.board, false);
+		let mut ordered_move_list = StagedMoveList::new::<C, OPP>(
+			hash_move,
+			&self.board,
+			false,
+			self.stack[ply_from_root as usize].checkers_mask,
+		);
 
 		let mut searched_quiets = MoveList::default();
 
@@ -349,7 +357,7 @@ impl<'a> SearchCtx<'a> {
 		let mut best_move = Move::default();
 		let lmp_threshold = 3 + (depth as usize * depth as usize) / (2 - improving as usize);
 		while let Some(m) = ordered_move_list
-			.pick_move::<C>(
+			.pick_move::<C, OPP>(
 				&self.board,
 				Some(&self.history),
 				Some(&self.killers[ply_from_root as usize]),
@@ -388,17 +396,17 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			//for m in move_list.iter() {
-			let undo_info = self.board.do_move::<C>(&m).unwrap();
+			let undo_info = self.board.do_move::<C, OPP>(&m).unwrap();
 
-			if self.board.is_in_check::<C>() {
-				self.board.undo_move::<C>(undo_info, &m);
+			if self.board.is_in_check::<C, OPP>() {
+				self.board.undo_move::<C, OPP>(undo_info, &m);
 				continue;
 			}
-			let gives_check = self.board.is_in_check::<OPP>();
-			self.stack[ply_from_root as usize + 1].in_check = gives_check;
+			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
+			self.stack[ply_from_root as usize + 1].checkers_mask = checkers_mask;
 
-			if m.is_quiet() && futile && !gives_check {
-				self.board.undo_move::<C>(undo_info, &m).unwrap();
+			if m.is_quiet() && futile && (checkers_mask == 0) {
+				self.board.undo_move::<C, OPP>(undo_info, &m).unwrap();
 				num_legal_moves += 1;
 				continue;
 			}
@@ -465,7 +473,7 @@ impl<'a> SearchCtx<'a> {
 				futile = true;
 			}
 
-			self.board.undo_move::<C>(undo_info, &m).unwrap();
+			self.board.undo_move::<C, OPP>(undo_info, &m).unwrap();
 
 			// fail-soft
 			if score > best_value {
@@ -511,7 +519,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if num_legal_moves == 0 {
-			if in_check {
+			if is_in_check {
 				let mating_value = -IMMEDIATE_MATE_SCORE + ply_from_root as i32;
 				return Some(mating_value);
 			}
@@ -600,7 +608,7 @@ impl<'a> SearchCtx<'a> {
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
-		let entry = self.tt.probe(&self.board);
+		let entry = self.tt.probe::<C, OPP>(&self.board);
 		if let Some(entry) = entry
 			&& entry.depth >= depth
 			&& depth == 0
@@ -621,10 +629,11 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 		let hash_move = entry.map(|e| e.best_move);
-		let in_check = self.board.is_in_check::<C>();
+		self.stack[0].checkers_mask = self.board.get_checkers_mask::<C, OPP>();
+		let is_in_check = self.stack[0].checkers_mask != 0;
 
-		let static_eval = if !in_check {
-			self.board.eval_objective() as i32
+		let static_eval = if !is_in_check {
+			self.board.eval_objective::<C>() as i32
 				* match C {
 					WHITE => 1,
 					BLACK => -1,
@@ -635,19 +644,19 @@ impl<'a> SearchCtx<'a> {
 		};
 
 		self.stack[0].static_eval = static_eval as i16;
-		self.stack[0].in_check = in_check;
 
-		let mut move_list = MoveList::default();
-
-		self.board
-			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
-
-		let mut ordered_move_list = StagedMoveList::new::<C>(hash_move, &self.board, false);
+		let mut ordered_move_list = StagedMoveList::new::<C, OPP>(
+			hash_move,
+			&self.board,
+			false,
+			self.stack[0].checkers_mask,
+		);
 
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(m) = ordered_move_list.pick_move::<C>(&self.board, Some(&self.history), None)
+		while let Some(m) =
+			ordered_move_list.pick_move::<C, OPP>(&self.board, Some(&self.history), None)
 		{
 			//for m in move_list.iter() {
 
@@ -669,15 +678,14 @@ impl<'a> SearchCtx<'a> {
 				break;
 			}
 
-			let undo_info = self.board.do_move::<C>(m)?;
+			let undo_info = self.board.do_move::<C, OPP>(m)?;
 
-			if self.board.is_in_check::<C>() {
-				self.board.undo_move::<C>(undo_info, m)?;
+			if self.board.is_in_check::<C, OPP>() {
+				self.board.undo_move::<C, OPP>(undo_info, m)?;
 				continue;
 			}
-
-			let gives_check = self.board.is_in_check::<OPP>();
-			self.stack[1].in_check = gives_check;
+			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
+			self.stack[1].checkers_mask = checkers_mask;
 
 			let mut score: i32;
 			if num_legal_moves == 0 {
@@ -709,7 +717,7 @@ impl<'a> SearchCtx<'a> {
 
 			num_legal_moves += 1;
 
-			self.board.undo_move::<C>(undo_info, m)?;
+			self.board.undo_move::<C, OPP>(undo_info, m)?;
 
 			if score > best_value {
 				best_move = *m;

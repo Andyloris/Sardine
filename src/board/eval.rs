@@ -153,54 +153,55 @@ impl Board {
 		}
 	}
 
-	pub(super) fn evaluation_add_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
-		let PieceColorPair(piece, color) = piece_color;
-		match color {
-			Color::White => {
+	pub(super) fn evaluation_add_piece<const C: u8>(&mut self, sq: u8, piece: Piece) {
+		match C {
+			WHITE => {
 				self.mg_material_score += MG_MATERIAL_WEIGHTS[piece as usize];
 				self.eg_material_score += EG_MATERIAL_WEIGHTS[piece as usize];
 				self.mg_pst_values += MG_PSTS[piece as usize][sq as usize ^ 56];
 				self.eg_pst_values += EG_PSTS[piece as usize][sq as usize ^ 56];
 			}
 
-			Color::Black => {
+			BLACK => {
 				self.mg_material_score -= MG_MATERIAL_WEIGHTS[piece as usize];
 				self.eg_material_score -= EG_MATERIAL_WEIGHTS[piece as usize];
 				self.mg_pst_values -= MG_PSTS[piece as usize][sq as usize];
 				self.eg_pst_values -= EG_PSTS[piece as usize][sq as usize];
 			}
+
+			_ => {}
 		};
 
-		self.num_bishops[color as usize] += if piece == Piece::Bishop { 1 } else { 0 };
+		self.num_bishops[C as usize] += if piece == Piece::Bishop { 1 } else { 0 };
 		self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
-	pub(super) fn evaluation_remove_piece(&mut self, sq: u8, piece_color: PieceColorPair) {
-		let PieceColorPair(piece, color) = piece_color;
-		match color {
-			Color::White => {
+	pub(super) fn evaluation_remove_piece<const C: u8>(&mut self, sq: u8, piece: Piece) {
+		match C {
+			WHITE => {
 				self.mg_material_score -= MG_MATERIAL_WEIGHTS[piece as usize];
 				self.eg_material_score -= EG_MATERIAL_WEIGHTS[piece as usize];
 				self.mg_pst_values -= MG_PSTS[piece as usize][sq as usize ^ 56];
 				self.eg_pst_values -= EG_PSTS[piece as usize][sq as usize ^ 56];
 			}
 
-			Color::Black => {
+			BLACK => {
 				self.mg_material_score += MG_MATERIAL_WEIGHTS[piece as usize];
 				self.eg_material_score += EG_MATERIAL_WEIGHTS[piece as usize];
 				self.mg_pst_values += MG_PSTS[piece as usize][sq as usize];
 				self.eg_pst_values += EG_PSTS[piece as usize][sq as usize];
 			}
+
+			_ => {}
 		};
 
-		self.num_bishops[color as usize] -= if piece == Piece::Bishop { 1 } else { 0 };
+		self.num_bishops[C as usize] -= if piece == Piece::Bishop { 1 } else { 0 };
 		self.gamephase -= GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
-	pub(super) fn evaluation_move_piece(&mut self, from: u8, to: u8, piece_color: PieceColorPair) {
-		let PieceColorPair(piece, color) = piece_color;
-		match color {
-			Color::White => {
+	pub(super) fn evaluation_move_piece<const C: u8>(&mut self, from: u8, to: u8, piece: Piece) {
+		match C {
+			WHITE => {
 				self.mg_pst_values -= MG_PSTS[piece as usize][from as usize ^ 56];
 				self.eg_pst_values -= EG_PSTS[piece as usize][from as usize ^ 56];
 
@@ -208,13 +209,15 @@ impl Board {
 				self.eg_pst_values += EG_PSTS[piece as usize][to as usize ^ 56];
 			}
 
-			Color::Black => {
+			BLACK => {
 				self.mg_pst_values += MG_PSTS[piece as usize][from as usize];
 				self.eg_pst_values += EG_PSTS[piece as usize][from as usize];
 
 				self.mg_pst_values -= MG_PSTS[piece as usize][to as usize];
 				self.eg_pst_values -= EG_PSTS[piece as usize][to as usize];
 			}
+
+			_ => {}
 		}
 	}
 
@@ -264,7 +267,7 @@ impl Board {
 		table
 	};
 
-	pub fn eval_objective(&self) -> i16 {
+	pub fn eval_objective<const C: u8>(&self) -> i16 {
 		let mg_weight = self.gamephase.min(Self::MAX_GAMEPHASE as u8) as i32;
 		let eg_weight = Self::MAX_GAMEPHASE - mg_weight;
 		let exponential_mg_weight = Self::EXPONENTIAL_GAMEPHASE_TRANSFORM[mg_weight as usize];
@@ -291,9 +294,10 @@ impl Board {
 		// Tapered eval
 		let material = (mg_weight * mg_material + eg_weight * eg_material) / Self::MAX_GAMEPHASE;
 
-		let tempo = match self.turn {
-			Color::White => Self::TEMPO_BONUS,
-			Color::Black => -Self::TEMPO_BONUS,
+		let tempo = match C {
+			WHITE => Self::TEMPO_BONUS,
+			BLACK => -Self::TEMPO_BONUS,
+			_ => 0,
 		};
 
 		let mut eval = material as i16 + tempo as i16;
@@ -309,14 +313,14 @@ impl Board {
 	}
 
 	// SEE stuff from https://www.chessprogramming.org/SEE_-_The_Swap_Algorithm
-	pub fn attacks_to_square_with_occ<const BY: u8>(&self, sq: u8, occ: &u64) -> u64 {
+	pub fn attacks_to_square_with_occ<const BY: u8, const OPP: u8>(
+		&self,
+		sq: u8,
+		occ: &u64,
+	) -> u64 {
 		let mut attackers = 0;
 		let pawns = self.pieces[BY as usize][Piece::Pawn as usize];
-		attackers |= match BY ^ 1 {
-			WHITE => get_pawn_attacks::<WHITE>(sq) & pawns,
-			BLACK => get_pawn_attacks::<BLACK>(sq) & pawns,
-			_ => 0,
-		};
+		attackers |= get_pawn_attacks::<OPP>(sq) & pawns;
 
 		let knights = self.pieces[BY as usize][Piece::Knight as usize];
 		attackers |= get_knight_attacks(sq) & knights;
@@ -335,51 +339,19 @@ impl Board {
 		attackers
 	}
 
-	fn get_least_valuable_piece(&self, attadef: u64, by_side: Color, out_piece: &mut Piece) -> u64 {
+	fn get_least_valuable_piece<const C: u8>(&self, attadef: u64, out_piece: &mut Piece) -> u64 {
 		for piece in PIECES {
-			let subset = attadef & self.pieces[by_side as usize][piece as usize];
+			let subset = attadef & self.pieces[C as usize][piece as usize];
 			if subset != 0 {
 				*out_piece = piece;
-				return subset & subset.wrapping_neg();
+				return subset.isolate_lowest_one();
 			}
 		}
 
 		0
 	}
 
-	pub fn see(&self, from: u8, to: u8, target: Piece, mut a_piece: Piece) -> i16 {
-		let mut gain: [i16; 32] = [0; 32];
-		let mut depth = 0;
-		let mut from_set = 1u64 << from;
-		let mut occ = self.occupied;
-		gain[0] = MATERIAL_WEIGHTS[target as usize];
-		let mut attadef;
-
-		loop {
-			depth += 1;
-			gain[depth] = MATERIAL_WEIGHTS[a_piece as usize] - gain[depth - 1];
-			occ ^= from_set;
-			if depth % 2 == 0 {
-				attadef = self.attacks_to_square_with_occ::<WHITE>(to, &occ) & occ;
-				from_set = self.get_least_valuable_piece(attadef, Color::White, &mut a_piece);
-			} else {
-				attadef = self.attacks_to_square_with_occ::<BLACK>(to, &occ) & occ;
-				from_set = self.get_least_valuable_piece(attadef, Color::Black, &mut a_piece);
-			}
-
-			if from_set == 0 {
-				break;
-			}
-		}
-
-		for d in (1..depth).rev() {
-			gain[d - 1] = -(gain[d].max(-gain[d - 1]));
-		}
-
-		gain[0]
-	}
-
-	pub fn see_ge(&self, m: Move, threshold: i16) -> bool {
+	pub fn see_ge<const C: u8, const OPP: u8>(&self, m: Move, threshold: i16) -> bool {
 		let (from, to, flags) = m.unpack();
 		if m.is_promotion()
 			|| matches!(
@@ -389,20 +361,12 @@ impl Board {
 			return 0 > threshold;
 		}
 
-		let victim = match self.turn {
-			Color::White => self.get_piece_at_square::<WHITE>(from),
-			Color::Black => self.get_piece_at_square::<BLACK>(from),
-		}
-		.unwrap_or(Piece::Pawn);
+		let victim = self.get_piece_at_square::<C>(from).unwrap_or(Piece::Pawn);
 
 		let move_value = if m.is_quiet() {
 			0
 		} else {
-			let target = match self.turn {
-				Color::White => self.get_piece_at_square::<BLACK>(to),
-				Color::Black => self.get_piece_at_square::<WHITE>(to),
-			}
-			.unwrap_or(Piece::Pawn);
+			let target = self.get_piece_at_square::<OPP>(to).unwrap_or(Piece::Pawn);
 			MATERIAL_WEIGHTS[target as usize]
 		};
 
@@ -427,14 +391,11 @@ impl Board {
 			| self.pieces[Color::Black as usize][Piece::Queen as usize];
 
 		let mut occ = self.occupied ^ (1u64 << from) ^ (1u64 << to);
-		let mut attackers = (self.attacks_to_square_with_occ::<WHITE>(to, &occ)
-			| self.attacks_to_square_with_occ::<BLACK>(to, &occ))
+		let mut attackers = (self.attacks_to_square_with_occ::<WHITE, BLACK>(to, &occ)
+			| self.attacks_to_square_with_occ::<BLACK, WHITE>(to, &occ))
 			& occ;
 
-		let mut turn = match self.turn {
-			Color::White => Color::Black,
-			Color::Black => Color::White,
-		};
+		let mut turn = OPP;
 
 		loop {
 			let own_attackers = attackers & self.pieces_by_color[turn as usize];
@@ -443,7 +404,11 @@ impl Board {
 			}
 
 			let mut attacker = Piece::Pawn;
-			let attacker_set = self.get_least_valuable_piece(own_attackers, turn, &mut attacker);
+			let attacker_set = match turn {
+				WHITE => self.get_least_valuable_piece::<WHITE>(own_attackers, &mut attacker),
+				BLACK => self.get_least_valuable_piece::<BLACK>(own_attackers, &mut attacker),
+				_ => 0,
+			};
 			occ ^= attacker_set;
 			if matches!(attacker, Piece::Pawn | Piece::Bishop | Piece::Queen) {
 				attackers |= get_sliding_attacks::<true>(to, occ) & bishops_queens;
@@ -454,22 +419,19 @@ impl Board {
 			}
 
 			attackers &= occ;
-			turn = match turn {
-				Color::White => Color::Black,
-				Color::Black => Color::White,
-			};
+			turn ^= 1;
 
 			swap = -swap - 1 - MATERIAL_WEIGHTS[attacker as usize];
 			if swap >= 0 {
 				if attacker == Piece::King && (attackers & self.pieces_by_color[turn as usize] != 0)
 				{
-					return self.turn == turn;
+					return C == turn;
 				}
 
 				break;
 			}
 		}
 
-		self.turn != turn
+		C != turn
 	}
 }

@@ -59,7 +59,7 @@ impl Board {
 		self.zobrist = undo_info.zobrist;
 	}
 
-	pub fn do_move<const C: u8>(&mut self, m: &Move) -> Option<UndoInfo> {
+	pub fn do_move<const C: u8, const OPP: u8>(&mut self, m: &Move) -> Option<UndoInfo> {
 		let mut undo_info = UndoInfo {
 			victim: None,
 			en_passant: self.en_passant,
@@ -130,7 +130,7 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(piece, Color::from(C)));
+				self.evaluation_move_piece::<C>(from, to, piece);
 
 				if piece == Piece::Pawn {
 					self.halfmove_clock = 0;
@@ -169,7 +169,7 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.evaluation_move_piece::<C>(from, to, Piece::Pawn);
 
 				should_reset_enpassant = false;
 				self.halfmove_clock = 0;
@@ -213,12 +213,8 @@ impl Board {
 					rook_to,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(Piece::King, Color::from(C)));
-				self.evaluation_move_piece(
-					rook_from,
-					rook_to,
-					PieceColorPair(Piece::Rook, Color::from(C)),
-				);
+				self.evaluation_move_piece::<C>(from, to, Piece::King);
+				self.evaluation_move_piece::<C>(rook_from, rook_to, Piece::Rook);
 
 				if self.king_castle_flags[C as usize] {
 					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
@@ -269,12 +265,8 @@ impl Board {
 					rook_to,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(Piece::King, Color::from(C)));
-				self.evaluation_move_piece(
-					rook_from,
-					rook_to,
-					PieceColorPair(Piece::Rook, Color::from(C)),
-				);
+				self.evaluation_move_piece::<C>(from, to, Piece::King);
+				self.evaluation_move_piece::<C>(rook_from, rook_to, Piece::Rook);
 
 				if self.king_castle_flags[C as usize] {
 					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
@@ -292,11 +284,7 @@ impl Board {
 				let to_mask = 1u64 << to;
 				let from_to = from_mask | to_mask;
 				let piece = self.get_piece_at_square::<C>(from)?;
-				let victim = match C ^ 1 {
-					WHITE => self.get_piece_at_square::<WHITE>(to)?,
-					BLACK => self.get_piece_at_square::<BLACK>(to)?,
-					_ => Piece::Pawn,
-				};
+				let victim = self.get_piece_at_square::<OPP>(to)?;
 
 				undo_info.victim = Some(victim);
 
@@ -355,8 +343,8 @@ impl Board {
 
 				self.pieces[C as usize][piece as usize] ^= from_to;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
@@ -372,12 +360,12 @@ impl Board {
 				));
 
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(victim, Color::from(C ^ 1)),
+					PieceColorPair(victim, Color::from(OPP)),
 					to,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(piece, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_move_piece::<C>(from, to, piece);
+				self.evaluation_remove_piece::<OPP>(to, victim);
 			}
 
 			MoveFlag::EpCaptures => {
@@ -395,8 +383,8 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_to;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces[(C ^ 1) as usize][Piece::Pawn as usize] ^= victim_mask;
-				self.pieces_by_color[(C ^ 1) as usize] ^= victim_mask;
+				self.pieces[OPP as usize][Piece::Pawn as usize] ^= victim_mask;
+				self.pieces_by_color[OPP as usize] ^= victim_mask;
 				self.empty ^= from_to ^ victim_mask;
 				self.occupied ^= from_to ^ victim_mask;
 
@@ -412,15 +400,12 @@ impl Board {
 				));
 
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(Piece::Pawn, Color::from(C ^ 1)),
+					PieceColorPair(Piece::Pawn, Color::from(OPP)),
 					victim_square,
 				));
 
-				self.evaluation_move_piece(from, to, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(
-					victim_square,
-					PieceColorPair(Piece::Pawn, Color::from(C ^ 1)),
-				);
+				self.evaluation_move_piece::<C>(from, to, Piece::Pawn);
+				self.evaluation_remove_piece::<OPP>(victim_square, Piece::Pawn);
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -445,8 +430,8 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_add_piece::<C>(to, Piece::Knight);
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -471,8 +456,8 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_add_piece::<C>(to, Piece::Bishop);
 			}
 
 			MoveFlag::RookPromotion => {
@@ -497,8 +482,8 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_add_piece::<C>(to, Piece::Rook);
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -523,19 +508,15 @@ impl Board {
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_add_piece::<C>(to, Piece::Queen);
 			}
 
 			MoveFlag::KnightPromoCapture => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
 				let from_to = from_mask | to_mask;
-				let victim = match C ^ 1 {
-					WHITE => self.get_piece_at_square::<WHITE>(to)?,
-					BLACK => self.get_piece_at_square::<BLACK>(to)?,
-					_ => Piece::Pawn,
-				};
+				let victim = self.get_piece_at_square::<OPP>(to)?;
 
 				undo_info.victim = Some(victim);
 
@@ -561,9 +542,9 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Knight as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
@@ -578,24 +559,20 @@ impl Board {
 					to,
 				));
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(victim, Color::from(C ^ 1)),
+					PieceColorPair(victim, Color::from(OPP)),
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<OPP>(to, victim);
+				self.evaluation_add_piece::<C>(to, Piece::Knight);
 			}
 
 			MoveFlag::BishopPromoCapture => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
 				let from_to = from_mask | to_mask;
-				let victim = match C ^ 1 {
-					WHITE => self.get_piece_at_square::<WHITE>(to)?,
-					BLACK => self.get_piece_at_square::<BLACK>(to)?,
-					_ => Piece::Pawn,
-				};
+				let victim = self.get_piece_at_square::<OPP>(to)?;
 
 				undo_info.victim = Some(victim);
 
@@ -621,9 +598,9 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Bishop as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
@@ -638,24 +615,20 @@ impl Board {
 					to,
 				));
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(victim, Color::from(C ^ 1)),
+					PieceColorPair(victim, Color::from(OPP)),
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<OPP>(to, victim);
+				self.evaluation_add_piece::<C>(to, Piece::Bishop);
 			}
 
 			MoveFlag::RookPromoCapture => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
 				let from_to = from_mask | to_mask;
-				let victim = match C ^ 1 {
-					WHITE => self.get_piece_at_square::<WHITE>(to)?,
-					BLACK => self.get_piece_at_square::<BLACK>(to)?,
-					_ => Piece::Pawn,
-				};
+				let victim = self.get_piece_at_square::<OPP>(to)?;
 
 				undo_info.victim = Some(victim);
 
@@ -681,9 +654,9 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Rook as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
@@ -698,24 +671,20 @@ impl Board {
 					to,
 				));
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(victim, Color::from(C ^ 1)),
+					PieceColorPair(victim, Color::from(OPP)),
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<OPP>(to, victim);
+				self.evaluation_add_piece::<C>(to, Piece::Rook);
 			}
 
 			MoveFlag::QueenPromoCapture => {
 				let from_mask = 1u64 << from;
 				let to_mask = 1u64 << to;
 				let from_to = from_mask | to_mask;
-				let victim = match C ^ 1 {
-					WHITE => self.get_piece_at_square::<WHITE>(to)?,
-					BLACK => self.get_piece_at_square::<BLACK>(to)?,
-					_ => Piece::Pawn,
-				};
+				let victim = self.get_piece_at_square::<OPP>(to)?;
 
 				undo_info.victim = Some(victim);
 
@@ -741,9 +710,9 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Queen as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
@@ -758,13 +727,13 @@ impl Board {
 					to,
 				));
 				self.apply_zobrist_delta(ZobristDelta::PutRemove(
-					PieceColorPair(victim, Color::from(C ^ 1)),
+					PieceColorPair(victim, Color::from(OPP)),
 					to,
 				));
 
-				self.evaluation_remove_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
-				self.evaluation_add_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
+				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<OPP>(to, victim);
+				self.evaluation_add_piece::<C>(to, Piece::Queen);
 			}
 		};
 
@@ -786,7 +755,11 @@ impl Board {
 		Some(undo_info)
 	}
 
-	pub fn undo_move<const C: u8>(&mut self, undo_info: UndoInfo, m: &Move) -> Option<()> {
+	pub fn undo_move<const C: u8, const OPP: u8>(
+		&mut self,
+		undo_info: UndoInfo,
+		m: &Move,
+	) -> Option<()> {
 		self.hash_history.pop();
 
 		self.turn = match self.turn {
@@ -813,7 +786,7 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(piece, Color::from(C)));
+				self.evaluation_move_piece::<C>(to, from, piece);
 			}
 
 			MoveFlag::DoublePush => {
@@ -826,7 +799,7 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.evaluation_move_piece::<C>(to, from, Piece::Pawn);
 			}
 
 			MoveFlag::KCastle => {
@@ -849,12 +822,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(Piece::King, Color::from(C)));
-				self.evaluation_move_piece(
-					rook_to,
-					rook_from,
-					PieceColorPair(Piece::Rook, Color::from(C)),
-				);
+				self.evaluation_move_piece::<C>(to, from, Piece::King);
+				self.evaluation_move_piece::<C>(rook_to, rook_from, Piece::Rook);
 			}
 
 			MoveFlag::QCastle => {
@@ -877,12 +846,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(Piece::King, Color::from(C)));
-				self.evaluation_move_piece(
-					rook_to,
-					rook_from,
-					PieceColorPair(Piece::Rook, Color::from(C)),
-				);
+				self.evaluation_move_piece::<C>(to, from, Piece::King);
+				self.evaluation_move_piece::<C>(rook_to, rook_from, Piece::Rook);
 			}
 
 			MoveFlag::Captures => {
@@ -894,13 +859,13 @@ impl Board {
 
 				self.pieces[C as usize][piece as usize] ^= from_to;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(piece, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_move_piece::<C>(to, from, piece);
+				self.evaluation_add_piece::<OPP>(to, victim);
 			}
 
 			MoveFlag::EpCaptures => {
@@ -916,16 +881,13 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_to;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces[(C ^ 1) as usize][Piece::Pawn as usize] ^= victim_mask;
-				self.pieces_by_color[(C ^ 1) as usize] ^= victim_mask;
+				self.pieces[OPP as usize][Piece::Pawn as usize] ^= victim_mask;
+				self.pieces_by_color[OPP as usize] ^= victim_mask;
 				self.empty ^= from_to ^ victim_mask;
 				self.occupied ^= from_to ^ victim_mask;
 
-				self.evaluation_move_piece(to, from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_add_piece(
-					victim_square,
-					PieceColorPair(Piece::Pawn, Color::from(C ^ 1)),
-				);
+				self.evaluation_move_piece::<C>(to, from, Piece::Pawn);
+				self.evaluation_add_piece::<OPP>(victim_square, Piece::Pawn);
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -939,8 +901,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Knight);
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -954,8 +916,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Bishop);
 			}
 
 			MoveFlag::RookPromotion => {
@@ -969,8 +931,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Rook);
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -984,8 +946,8 @@ impl Board {
 				self.empty ^= from_to;
 				self.occupied ^= from_to;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Queen);
 			}
 
 			MoveFlag::KnightPromoCapture => {
@@ -996,15 +958,15 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Knight as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Knight);
+				self.evaluation_add_piece::<OPP>(to, victim);
 			}
 
 			MoveFlag::BishopPromoCapture => {
@@ -1015,15 +977,15 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Bishop as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Bishop);
+				self.evaluation_add_piece::<OPP>(to, victim);
 			}
 
 			MoveFlag::RookPromoCapture => {
@@ -1034,15 +996,15 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Rook as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Rook);
+				self.evaluation_add_piece::<OPP>(to, victim);
 			}
 
 			MoveFlag::QueenPromoCapture => {
@@ -1053,15 +1015,15 @@ impl Board {
 
 				self.pieces[C as usize][Piece::Pawn as usize] ^= from_mask;
 				self.pieces[C as usize][Piece::Queen as usize] ^= to_mask;
-				self.pieces[(C ^ 1) as usize][victim as usize] ^= to_mask;
+				self.pieces[OPP as usize][victim as usize] ^= to_mask;
 				self.pieces_by_color[C as usize] ^= from_to;
-				self.pieces_by_color[(C ^ 1) as usize] ^= to_mask;
+				self.pieces_by_color[OPP as usize] ^= to_mask;
 				self.empty ^= from_mask;
 				self.occupied ^= from_mask;
 
-				self.evaluation_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
-				self.evaluation_remove_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
-				self.evaluation_add_piece(to, PieceColorPair(victim, Color::from(C ^ 1)));
+				self.evaluation_add_piece::<C>(from, Piece::Pawn);
+				self.evaluation_remove_piece::<C>(to, Piece::Queen);
+				self.evaluation_add_piece::<OPP>(to, victim);
 			}
 		}
 

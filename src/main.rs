@@ -1,11 +1,10 @@
-#![feature(portable_simd)]
 use shakmaty::{Chess, Position, fen::Fen};
 
 use crate::{
 	board::{
 		Board,
-		movegen::{Move, MoveFlag, MoveList, move_gen_stages},
-		utils::{BLACK, Bitboard, Color, Piece, Squares, WHITE},
+		movegen::{Move, MoveList},
+		utils::{BLACK, Color, WHITE},
 	},
 	tuning::{TUNE_PARAMS, print_tune_info},
 	uci::UCIInstance,
@@ -24,23 +23,23 @@ fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 
 	let mut move_list = MoveList::default();
 
-	brd.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
+	brd.gen_all_pseudo_legal_moves_no_context(&mut move_list);
 
 	let mut nodes = 0;
 	for m in move_list.iter() {
 		let undo_info = match brd.get_turn() {
-			Color::White => brd.do_move::<WHITE>(m),
-			Color::Black => brd.do_move::<BLACK>(m),
+			Color::White => brd.do_move::<WHITE, BLACK>(m),
+			Color::Black => brd.do_move::<BLACK, WHITE>(m),
 		}
 		.unwrap();
 
 		if match brd.get_turn() {
-			Color::White => brd.is_in_check::<BLACK>(),
-			Color::Black => brd.is_in_check::<WHITE>(),
+			Color::White => brd.is_in_check::<BLACK, WHITE>(),
+			Color::Black => brd.is_in_check::<WHITE, BLACK>(),
 		} {
 			match brd.get_turn() {
-				Color::Black => brd.undo_move::<WHITE>(undo_info, m),
-				Color::White => brd.undo_move::<BLACK>(undo_info, m),
+				Color::Black => brd.undo_move::<WHITE, BLACK>(undo_info, m),
+				Color::White => brd.undo_move::<BLACK, WHITE>(undo_info, m),
 			};
 			continue;
 		}
@@ -48,8 +47,8 @@ fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 		nodes += perft_driver(brd, d - 1);
 
 		match brd.get_turn() {
-			Color::Black => brd.undo_move::<WHITE>(undo_info, m),
-			Color::White => brd.undo_move::<BLACK>(undo_info, m),
+			Color::Black => brd.undo_move::<WHITE, BLACK>(undo_info, m),
+			Color::White => brd.undo_move::<BLACK, BLACK>(undo_info, m),
 		}
 		.unwrap();
 	}
@@ -107,32 +106,19 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 	correct_moves.sort_by_key(|a| (a.0, a.1));
 	let mut move_list = MoveList::default();
 
-	if match brd.get_turn() {
-		Color::White => brd.is_in_check::<WHITE>(),
-		Color::Black => brd.is_in_check::<BLACK>(),
-	} {
-		match brd.get_turn() {
-			Color::White => brd.gen_all_pseudo_legal_moves_in_check::<WHITE>(&mut move_list),
-			Color::Black => brd.gen_all_pseudo_legal_moves_in_check::<BLACK>(&mut move_list),
-		};
-	} else {
-		match brd.get_turn() {
-			Color::White => brd.gen_all_pseudo_legal_moves::<WHITE>(&mut move_list),
-			Color::Black => brd.gen_all_pseudo_legal_moves::<BLACK>(&mut move_list),
-		};
-	}
+	brd.gen_all_pseudo_legal_moves_no_context(&mut move_list);
 	let mut my_moves = move_list
 		.iter()
 		.filter_map(|m| {
 			let mut brd_cpy = brd.clone();
 			match brd.get_turn() {
-				Color::White => brd_cpy.do_move::<WHITE>(m),
-				Color::Black => brd_cpy.do_move::<BLACK>(m),
+				Color::White => brd_cpy.do_move::<WHITE, BLACK>(m),
+				Color::Black => brd_cpy.do_move::<BLACK, WHITE>(m),
 			};
 
 			if match brd_cpy.get_turn() {
-				Color::White => brd_cpy.is_in_check::<BLACK>(),
-				Color::Black => brd_cpy.is_in_check::<WHITE>(),
+				Color::White => brd_cpy.is_in_check::<BLACK, WHITE>(),
+				Color::Black => brd_cpy.is_in_check::<WHITE, BLACK>(),
 			} {
 				None
 			} else {
@@ -211,8 +197,8 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 		pv.push(m.2);
 		let mut brd_cpy = brd.clone();
 		match brd.get_turn() {
-			Color::White => brd_cpy.do_move::<WHITE>(&my_moves[idx].2),
-			Color::Black => brd_cpy.do_move::<BLACK>(&my_moves[idx].2),
+			Color::White => brd_cpy.do_move::<WHITE, BLACK>(&my_moves[idx].2),
+			Color::Black => brd_cpy.do_move::<BLACK, WHITE>(&my_moves[idx].2),
 		};
 
 		let mut shakmaty_cpy = shakmaty_pos.clone();
