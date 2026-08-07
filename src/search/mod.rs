@@ -80,7 +80,7 @@ impl<'a> SearchCtx<'a> {
 		}
 	}
 
-	fn quiescence_search(
+	fn quiescence_search<const C: u8, const OPP: u8>(
 		&mut self,
 		ply_from_root: u8,
 		mut alpha: i32,
@@ -113,6 +113,7 @@ impl<'a> SearchCtx<'a> {
 			return Some(alpha);
 		}
 
+		// ToDo: use the same methodology of using parent results here
 		let is_in_check = match self.board.get_turn() {
 			Color::White => self.board.is_in_check::<WHITE>(),
 			Color::Black => self.board.is_in_check::<BLACK>(),
@@ -139,53 +140,29 @@ impl<'a> SearchCtx<'a> {
 			}
 		}
 
-		let mut ordered_move_list = match self.board.get_turn() {
-			Color::White => StagedMoveList::new::<WHITE>(None, &self.board, only_captures),
-			Color::Black => StagedMoveList::new::<BLACK>(None, &self.board, only_captures),
-		};
+		let mut ordered_move_list = StagedMoveList::new::<C>(None, &self.board, only_captures);
 
 		let mut num_legal_moves = 0;
-		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(
-				&self.board,
-				Some(&self.history),
-				Some(&self.killers[ply_from_root as usize]),
-			),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(
-				&self.board,
-				Some(&self.history),
-				Some(&self.killers[ply_from_root as usize]),
-			),
-		} {
+		while let Some(m) = ordered_move_list.pick_move::<C>(
+			&self.board,
+			Some(&self.history),
+			Some(&self.killers[ply_from_root as usize]),
+		) {
 			if !self.board.see_ge(*m, -100) {
 				continue;
 			}
 			//for m in move_list.iter() {
-			let undo_info = match self.board.get_turn() {
-				Color::White => self.board.do_move::<WHITE>(m),
-				Color::Black => self.board.do_move::<BLACK>(m),
-			}
-			.unwrap();
+			let undo_info = self.board.do_move::<C>(m)?;
 
-			if match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<BLACK>(),
-				Color::Black => self.board.is_in_check::<WHITE>(),
-			} {
-				match self.board.get_turn() {
-					Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-					Color::White => self.board.undo_move::<BLACK>(undo_info, m),
-				};
+			if self.board.is_in_check::<C>() {
+				self.board.undo_move::<C>(undo_info, m)?;
 				continue;
 			}
 			num_legal_moves += 1;
 
-			let score = -self.quiescence_search(ply_from_root + 1, -beta, -alpha)?;
+			let score = -self.quiescence_search::<OPP, C>(ply_from_root + 1, -beta, -alpha)?;
 
-			match self.board.get_turn() {
-				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-				Color::White => self.board.undo_move::<BLACK>(undo_info, m),
-			}
-			.unwrap();
+			self.board.undo_move::<C>(undo_info, m)?;
 
 			// fail-soft
 			if score > best_value {
@@ -209,7 +186,7 @@ impl<'a> SearchCtx<'a> {
 		Some(best_value)
 	}
 
-	fn negamax<const NODE_TYPE: u8>(
+	fn negamax<const NODE_TYPE: u8, const C: u8, const OPP: u8>(
 		&mut self,
 		mut depth: u8,
 		ply_from_root: u8,
@@ -270,16 +247,17 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if depth == 0 {
-			return self.quiescence_search(ply_from_root, alpha, beta);
+			return self.quiescence_search::<C, OPP>(ply_from_root, alpha, beta);
 		}
 
 		let hash_move = entry.as_ref().map(|e| e.best_move);
 
 		let static_eval = if !in_check {
 			self.board.eval_objective() as i32
-				* match self.board.get_turn() {
-					Color::White => 1,
-					Color::Black => -1,
+				* match C {
+					WHITE => 1,
+					BLACK => -1,
+					_ => 0,
 				}
 		} else {
 			// Do not evaluate in check
@@ -323,16 +301,14 @@ impl<'a> SearchCtx<'a> {
 			if !in_check
 				&& depth >= 2
 				&& self.stack[ply_from_root as usize].excluded == Move::default()
-				&& match self.board.get_turn() {
-					Color::White => self.board.has_non_pawn_material::<WHITE>(),
-					Color::Black => self.board.has_non_pawn_material::<BLACK>(),
-				} && NODE_TYPE == node_types::CUT
+				&& self.board.has_non_pawn_material::<C>()
+				&& NODE_TYPE == node_types::CUT
 				&& static_eval >= beta
 			{
 				let r = 3 + depth as i32 / 3 + improving as i32 + ((static_eval - beta) / 128);
 				self.stack[ply_from_root as usize + 1].in_check = false;
 				let undo_info = self.board.do_null_move();
-				let score = -self.negamax::<{ node_types::CUT }>(
+				let score = -self.negamax::<{ node_types::CUT }, { OPP }, { C }>(
 					depth.saturating_sub(r.min(255) as u8),
 					ply_from_root + 1,
 					-beta,
@@ -364,10 +340,7 @@ impl<'a> SearchCtx<'a> {
 			depth -= 1;
 		}
 
-		let mut ordered_move_list = match self.board.get_turn() {
-			Color::White => StagedMoveList::new::<WHITE>(hash_move, &self.board, false),
-			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
-		};
+		let mut ordered_move_list = StagedMoveList::new::<C>(hash_move, &self.board, false);
 
 		let mut searched_quiets = MoveList::default();
 
@@ -375,19 +348,13 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves: usize = 0;
 		let mut best_move = Move::default();
 		let lmp_threshold = 3 + (depth as usize * depth as usize) / (2 - improving as usize);
-		while let Some(m) = match self.board.get_turn() {
-			Color::White => ordered_move_list.pick_move::<WHITE>(
+		while let Some(m) = ordered_move_list
+			.pick_move::<C>(
 				&self.board,
 				Some(&self.history),
 				Some(&self.killers[ply_from_root as usize]),
-			),
-			Color::Black => ordered_move_list.pick_move::<BLACK>(
-				&self.board,
-				Some(&self.history),
-				Some(&self.killers[ply_from_root as usize]),
-			),
-		}
-		.copied()
+			)
+			.copied()
 		{
 			let mut r: i8 = 1;
 			if m == self.stack[ply_from_root as usize].excluded {
@@ -404,7 +371,7 @@ impl<'a> SearchCtx<'a> {
 			{
 				self.stack[ply_from_root as usize].excluded = m;
 				let singular_beta = entry.score as i32 - depth as i32;
-				let singular_score = self.negamax::<NODE_TYPE>(
+				let singular_score = self.negamax::<NODE_TYPE, C, OPP>(
 					(depth - 1) / 2,
 					ply_from_root,
 					singular_beta - 1,
@@ -421,34 +388,17 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			//for m in move_list.iter() {
-			let undo_info = match self.board.get_turn() {
-				Color::White => self.board.do_move::<WHITE>(&m),
-				Color::Black => self.board.do_move::<BLACK>(&m),
-			}
-			.unwrap();
+			let undo_info = self.board.do_move::<C>(&m).unwrap();
 
-			if match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<BLACK>(),
-				Color::Black => self.board.is_in_check::<WHITE>(),
-			} {
-				match self.board.get_turn() {
-					Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
-					Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
-				};
+			if self.board.is_in_check::<C>() {
+				self.board.undo_move::<C>(undo_info, &m);
 				continue;
 			}
-			let gives_check = match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<WHITE>(),
-				Color::Black => self.board.is_in_check::<BLACK>(),
-			};
+			let gives_check = self.board.is_in_check::<OPP>();
 			self.stack[ply_from_root as usize + 1].in_check = gives_check;
 
 			if m.is_quiet() && futile && !gives_check {
-				match self.board.get_turn() {
-					Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
-					Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
-				}
-				.unwrap();
+				self.board.undo_move::<C>(undo_info, &m).unwrap();
 				num_legal_moves += 1;
 				continue;
 			}
@@ -463,7 +413,7 @@ impl<'a> SearchCtx<'a> {
 			if num_legal_moves == 0 {
 				match NODE_TYPE {
 					node_types::CUT => {
-						score = -self.negamax::<{ node_types::ALL }>(
+						score = -self.negamax::<{ node_types::ALL }, OPP, C>(
 							depth.saturating_sub_signed(r),
 							ply_from_root + 1,
 							-beta,
@@ -472,7 +422,7 @@ impl<'a> SearchCtx<'a> {
 						)?
 					}
 					node_types::ALL => {
-						score = -self.negamax::<{ node_types::CUT }>(
+						score = -self.negamax::<{ node_types::CUT }, OPP, C>(
 							depth.saturating_sub_signed(r),
 							ply_from_root + 1,
 							-beta,
@@ -481,7 +431,7 @@ impl<'a> SearchCtx<'a> {
 						)?
 					}
 					_ => {
-						score = -self.negamax::<NODE_TYPE>(
+						score = -self.negamax::<NODE_TYPE, OPP, C>(
 							depth.saturating_sub_signed(r),
 							ply_from_root + 1,
 							-beta,
@@ -491,7 +441,7 @@ impl<'a> SearchCtx<'a> {
 					}
 				}
 			} else {
-				score = -self.negamax::<{ node_types::CUT }>(
+				score = -self.negamax::<{ node_types::CUT }, OPP, C>(
 					depth.saturating_sub_signed(r),
 					ply_from_root + 1,
 					-alpha - 1,
@@ -499,7 +449,7 @@ impl<'a> SearchCtx<'a> {
 					pv_next_index,
 				)?;
 				if score > alpha && NODE_TYPE == node_types::PV {
-					score = -self.negamax::<{ node_types::PV }>(
+					score = -self.negamax::<{ node_types::PV }, OPP, C>(
 						depth - 1,
 						ply_from_root + 1,
 						-beta,
@@ -515,11 +465,7 @@ impl<'a> SearchCtx<'a> {
 				futile = true;
 			}
 
-			match self.board.get_turn() {
-				Color::Black => self.board.undo_move::<WHITE>(undo_info, &m),
-				Color::White => self.board.undo_move::<BLACK>(undo_info, &m),
-			}
-			.unwrap();
+			self.board.undo_move::<C>(undo_info, &m).unwrap();
 
 			// fail-soft
 			if score > best_value {
@@ -550,37 +496,11 @@ impl<'a> SearchCtx<'a> {
 					let bonus = depth as i16 * depth as i16;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
-						match self.board.get_turn() {
-							Color::White => move_ordering::update_history::<WHITE>(
-								&mut self.history,
-								from,
-								to,
-								-bonus,
-							),
-							Color::Black => move_ordering::update_history::<BLACK>(
-								&mut self.history,
-								from,
-								to,
-								-bonus,
-							),
-						}
+						move_ordering::update_history::<C>(&mut self.history, from, to, -bonus)
 					}
 
 					let (from, to, _) = m.unpack();
-					match self.board.get_turn() {
-						Color::White => move_ordering::update_history::<WHITE>(
-							&mut self.history,
-							from,
-							to,
-							bonus,
-						),
-						Color::Black => move_ordering::update_history::<BLACK>(
-							&mut self.history,
-							from,
-							to,
-							bonus,
-						),
-					}
+					move_ordering::update_history::<C>(&mut self.history, from, to, bonus)
 				}
 				break; // Beta-cutoff
 			}
@@ -591,10 +511,7 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		if num_legal_moves == 0 {
-			if match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<WHITE>(),
-				Color::Black => self.board.is_in_check::<BLACK>(),
-			} {
+			if in_check {
 				let mating_value = -IMMEDIATE_MATE_SCORE + ply_from_root as i32;
 				return Some(mating_value);
 			}
@@ -669,7 +586,12 @@ impl<'a> SearchCtx<'a> {
 		);
 	}
 
-	fn bestmove(&mut self, depth: u8, mut alpha: i32, mut beta: i32) -> Option<(Move, i32)> {
+	fn bestmove<const C: u8, const OPP: u8>(
+		&mut self,
+		depth: u8,
+		mut alpha: i32,
+		mut beta: i32,
+	) -> Option<(Move, i32)> {
 		self.pv_array[0] = Move::default();
 		let pv_next_index = 256usize;
 
@@ -699,16 +621,14 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 		let hash_move = entry.map(|e| e.best_move);
-		let in_check = match self.board.get_turn() {
-			Color::White => self.board.is_in_check::<WHITE>(),
-			Color::Black => self.board.is_in_check::<BLACK>(),
-		};
+		let in_check = self.board.is_in_check::<C>();
 
 		let static_eval = if !in_check {
 			self.board.eval_objective() as i32
-				* match self.board.get_turn() {
-					Color::White => 1,
-					Color::Black => -1,
+				* match C {
+					WHITE => 1,
+					BLACK => -1,
+					_ => 0,
 				}
 		} else {
 			-IMMEDIATE_MATE_SCORE - 1
@@ -722,22 +642,13 @@ impl<'a> SearchCtx<'a> {
 		self.board
 			.gen_all_pseudo_legal_moves_non_monomorphizing(&mut move_list);
 
-		let mut ordered_move_list = match self.board.get_turn() {
-			Color::White => StagedMoveList::new::<WHITE>(hash_move, &self.board, false),
-			Color::Black => StagedMoveList::new::<BLACK>(hash_move, &self.board, false),
-		};
+		let mut ordered_move_list = StagedMoveList::new::<C>(hash_move, &self.board, false);
 
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(m) = match self.board.get_turn() {
-			Color::White => {
-				ordered_move_list.pick_move::<WHITE>(&self.board, Some(&self.history), None)
-			}
-			Color::Black => {
-				ordered_move_list.pick_move::<BLACK>(&self.board, Some(&self.history), None)
-			}
-		} {
+		while let Some(m) = ordered_move_list.pick_move::<C>(&self.board, Some(&self.history), None)
+		{
 			//for m in move_list.iter() {
 
 			// Avoids playing illegal moves when running out of time
@@ -758,32 +669,19 @@ impl<'a> SearchCtx<'a> {
 				break;
 			}
 
-			let undo_info = match self.board.get_turn() {
-				Color::White => self.board.do_move::<WHITE>(m),
-				Color::Black => self.board.do_move::<BLACK>(m),
-			}
-			.unwrap();
+			let undo_info = self.board.do_move::<C>(m)?;
 
-			if match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<BLACK>(),
-				Color::Black => self.board.is_in_check::<WHITE>(),
-			} {
-				match self.board.get_turn() {
-					Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-					Color::White => self.board.undo_move::<BLACK>(undo_info, m),
-				};
+			if self.board.is_in_check::<C>() {
+				self.board.undo_move::<C>(undo_info, m)?;
 				continue;
 			}
 
-			let gives_check = match self.board.get_turn() {
-				Color::White => self.board.is_in_check::<WHITE>(),
-				Color::Black => self.board.is_in_check::<BLACK>(),
-			};
+			let gives_check = self.board.is_in_check::<OPP>();
 			self.stack[1].in_check = gives_check;
 
 			let mut score: i32;
 			if num_legal_moves == 0 {
-				score = -self.negamax::<{ node_types::PV }>(
+				score = -self.negamax::<{ node_types::PV }, OPP, C>(
 					depth - 1,
 					1,
 					-beta,
@@ -791,7 +689,7 @@ impl<'a> SearchCtx<'a> {
 					pv_next_index,
 				)?;
 			} else {
-				score = -self.negamax::<{ node_types::CUT }>(
+				score = -self.negamax::<{ node_types::CUT }, OPP, C>(
 					depth - 1,
 					1,
 					-alpha - 1,
@@ -799,7 +697,7 @@ impl<'a> SearchCtx<'a> {
 					pv_next_index,
 				)?;
 				if score > alpha {
-					score = -self.negamax::<{ node_types::PV }>(
+					score = -self.negamax::<{ node_types::PV }, OPP, C>(
 						depth - 1,
 						1,
 						-beta,
@@ -811,11 +709,7 @@ impl<'a> SearchCtx<'a> {
 
 			num_legal_moves += 1;
 
-			match self.board.get_turn() {
-				Color::Black => self.board.undo_move::<WHITE>(undo_info, m),
-				Color::White => self.board.undo_move::<BLACK>(undo_info, m),
-			}
-			.unwrap();
+			self.board.undo_move::<C>(undo_info, m)?;
 
 			if score > best_value {
 				best_move = *m;
@@ -868,7 +762,10 @@ impl<'a> SearchCtx<'a> {
 		let mut beta = score + delta;
 
 		loop {
-			let search_info = self.bestmove(depth, alpha, beta)?;
+			let search_info = match self.board.get_turn() {
+				Color::White => self.bestmove::<WHITE, BLACK>(depth, alpha, beta)?,
+				Color::Black => self.bestmove::<BLACK, WHITE>(depth, alpha, beta)?,
+			};
 			if search_info.1 <= alpha {
 				beta = (alpha + beta) / 2;
 				alpha -= delta;
@@ -903,9 +800,19 @@ impl<'a> SearchCtx<'a> {
 		self.nodes = 0;
 		self.seldepth = 0;
 
-		let mut best_info = self
-			.bestmove(1, -IMMEDIATE_MATE_SCORE - 1, IMMEDIATE_MATE_SCORE + 1)
-			.expect("Failed depth 1 search in time");
+		let mut best_info = match self.board.get_turn() {
+			Color::White => self.bestmove::<WHITE, BLACK>(
+				1,
+				-IMMEDIATE_MATE_SCORE - 1,
+				IMMEDIATE_MATE_SCORE + 1,
+			),
+			Color::Black => self.bestmove::<BLACK, WHITE>(
+				1,
+				-IMMEDIATE_MATE_SCORE - 1,
+				IMMEDIATE_MATE_SCORE + 1,
+			),
+		}
+		.expect("Failed depth 1 search in time");
 		Self::uci_print_score(
 			best_info.1,
 			1,
