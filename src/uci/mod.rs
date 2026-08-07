@@ -37,11 +37,17 @@ impl UCIInstance {
 				["ucinewgame"] => self.ucinewgame(),
 				["go", tokens @ ..] => self.go(tokens),
 
+				["eval"] => self.eval(),
+
 				["quit"] => std::process::exit(0),
 
 				_ => eprintln!("Unknown command"),
 			}
 		}
+	}
+
+	fn eval(&self) {
+		println!("{}", self.position.eval_objective());
 	}
 
 	fn from_lan(&self, lan: String) -> Option<Move> {

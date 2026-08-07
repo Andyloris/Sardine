@@ -227,10 +227,48 @@ impl Board {
 
 	const TEMPO_BONUS: i32 = 13;
 	const BISHOP_PAIR_BONUS: i32 = 30;
+	const MG_CASTLING_RIGHTS_MALUS: i32 = -60;
+	const EG_CASTLING_RIGHTS_MALUS: i32 = -10;
+
+	const fn exponential_interpolator_a(b: f64) -> f64 {
+		let max_phase = Self::MAX_GAMEPHASE as f64;
+		(max_phase * max_phase)
+			/ (softfloat::F64::from_native_f64((max_phase / b) + 1f64)
+				.ln()
+				.to_native_f64())
+	}
+
+	const fn exponential_gamephase_transform(phase: f64, k: f64) -> i32 {
+		let b = softfloat::F64::from_native_f64(-k).exp().to_native_f64();
+		let a = Self::exponential_interpolator_a(b);
+		let exponent = (phase * phase) / a;
+		((softfloat::F64::from_native_f64(exponent)
+			.exp()
+			.to_native_f64()
+			- 1f64) * b)
+			.max(0.0f64)
+			.min(255.0f64) as i32
+	}
+
+	pub const EXPONENTIAL_GAMEPHASE_TRANSFORM: [i32; Self::MAX_GAMEPHASE as usize + 1] = {
+		let mut table = [0; _];
+		let mut i = 0;
+		loop {
+			if i > Self::MAX_GAMEPHASE as usize {
+				break;
+			}
+			table[i] = Self::exponential_gamephase_transform(i as f64, -4f64);
+			i += 1;
+		}
+
+		table
+	};
 
 	pub fn eval_objective(&self) -> i16 {
 		let mg_weight = self.gamephase.min(Self::MAX_GAMEPHASE as u8) as i32;
 		let eg_weight = Self::MAX_GAMEPHASE - mg_weight;
+		let exponential_mg_weight = Self::EXPONENTIAL_GAMEPHASE_TRANSFORM[mg_weight as usize];
+		let exponential_eg_weight = Self::MAX_GAMEPHASE - exponential_mg_weight;
 
 		let wbishop_pair = if self.num_bishops[WHITE as usize] > 1 {
 			Self::BISHOP_PAIR_BONUS

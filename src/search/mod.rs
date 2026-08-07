@@ -906,8 +906,18 @@ impl<'a> SearchCtx<'a> {
 		let mut best_info = self
 			.bestmove(1, -IMMEDIATE_MATE_SCORE - 1, IMMEDIATE_MATE_SCORE + 1)
 			.expect("Failed depth 1 search in time");
+		Self::uci_print_score(
+			best_info.1,
+			1,
+			self.seldepth,
+			best_info.0,
+			self.nodes,
+			self.search_start,
+			&self.pv_array[0..256],
+		);
 
 		for depth in 2..=self.max_depth {
+			self.seldepth = 0;
 			let info = self.aspirated_search(depth, best_info.1);
 			if self.stop_search {
 				break;
