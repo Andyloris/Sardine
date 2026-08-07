@@ -122,6 +122,11 @@ impl Board {
 			let mut w_bb = self.pieces[WHITE as usize][piece as usize];
 			let mut b_bb = self.pieces[BLACK as usize][piece as usize];
 
+			if piece == Piece::Bishop {
+				self.num_bishops[WHITE as usize] = w_bb.count_ones() as u8;
+				self.num_bishops[BLACK as usize] = b_bb.count_ones() as u8;
+			}
+
 			while w_bb != 0 {
 				let sq = w_bb.trailing_zeros();
 				clear_lsb(&mut w_bb);
@@ -166,6 +171,7 @@ impl Board {
 			}
 		};
 
+		self.num_bishops[color as usize] += if piece == Piece::Bishop { 1 } else { 0 };
 		self.gamephase += GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
@@ -187,6 +193,7 @@ impl Board {
 			}
 		};
 
+		self.num_bishops[color as usize] -= if piece == Piece::Bishop { 1 } else { 0 };
 		self.gamephase -= GAMEPHASE_INCREMENTS[piece as usize];
 	}
 
@@ -219,12 +226,29 @@ impl Board {
 		+ 2 * GAMEPHASE_INCREMENTS[Piece::King as usize] as i32;
 
 	const TEMPO_BONUS: i32 = 13;
+	const BISHOP_PAIR_BONUS: i32 = 30;
+
 	pub fn eval_objective(&self) -> i16 {
 		let mg_weight = self.gamephase.min(Self::MAX_GAMEPHASE as u8) as i32;
 		let eg_weight = Self::MAX_GAMEPHASE - mg_weight;
 
-		let mg_material = self.mg_pst_values as i32 + self.mg_material_score as i32;
-		let eg_material = self.eg_pst_values as i32 + self.eg_material_score as i32;
+		let wbishop_pair = if self.num_bishops[WHITE as usize] > 1 {
+			Self::BISHOP_PAIR_BONUS
+		} else {
+			0
+		};
+		let bbishop_pair = if self.num_bishops[BLACK as usize] > 1 {
+			Self::BISHOP_PAIR_BONUS
+		} else {
+			0
+		};
+
+		let mg_material = self.mg_pst_values as i32
+			+ self.mg_material_score as i32
+			+ (wbishop_pair - bbishop_pair);
+		let eg_material = self.eg_pst_values as i32
+			+ self.eg_material_score as i32
+			+ (wbishop_pair - bbishop_pair);
 
 		// Tapered eval
 		let material = (mg_weight * mg_material + eg_weight * eg_material) / Self::MAX_GAMEPHASE;

@@ -11,7 +11,6 @@ mod zobrist;
 use std::{fmt::Display, num::NonZero};
 
 use crate::board::{
-	eval::GAMEPHASE_INCREMENTS,
 	utils::{
 		BLACK_SQUARES, Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square,
 		WHITE_SQUARES,
@@ -40,6 +39,7 @@ pub struct Board {
 	mg_pst_values: i16,
 	eg_pst_values: i16,
 	gamephase: u8,
+	num_bishops: [u8; 2],
 }
 
 impl Board {
