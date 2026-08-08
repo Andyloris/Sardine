@@ -435,6 +435,13 @@ impl<'a> SearchCtx<'a> {
 				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i8;
 			}
 
+			r = r
+				.saturating_sub(match NODE_TYPE {
+					node_types::PV => 1,
+					_ => 0,
+				})
+				.max(0);
+
 			let new_depth = depth
 				.saturating_sub_signed(r)
 				.saturating_add_signed(extension)
