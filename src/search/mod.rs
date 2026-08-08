@@ -382,7 +382,8 @@ impl<'a> SearchCtx<'a> {
 			)
 			.copied()
 		{
-			let mut r: i8 = 1;
+			let mut r: i8 = 0;
+			let mut extension = 0;
 			if m == self.stack[ply_from_root as usize].excluded {
 				continue;
 			}
@@ -407,7 +408,7 @@ impl<'a> SearchCtx<'a> {
 				self.stack[ply_from_root as usize].excluded = Move::default();
 
 				if singular_score < singular_beta {
-					r -= 1;
+					extension += 1;
 				} else if entry.score as i32 >= beta {
 					r += 3;
 				}
@@ -434,13 +435,18 @@ impl<'a> SearchCtx<'a> {
 				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i8;
 			}
 
+			let new_depth = depth
+				.saturating_sub_signed(r)
+				.saturating_add_signed(extension)
+				.saturating_sub_signed(1);
+
 			// ToDo: Implementation leaves board messed up after quitting search when timing out
 			let mut score: i32;
 			if num_legal_moves == 0 {
 				match NODE_TYPE {
 					node_types::CUT => {
 						score = -self.negamax::<{ node_types::ALL }, OPP, C>(
-							depth.saturating_sub_signed(r),
+							new_depth,
 							ply_from_root + 1,
 							-beta,
 							-alpha,
@@ -449,7 +455,7 @@ impl<'a> SearchCtx<'a> {
 					}
 					node_types::ALL => {
 						score = -self.negamax::<{ node_types::CUT }, OPP, C>(
-							depth.saturating_sub_signed(r),
+							new_depth,
 							ply_from_root + 1,
 							-beta,
 							-alpha,
@@ -458,7 +464,7 @@ impl<'a> SearchCtx<'a> {
 					}
 					_ => {
 						score = -self.negamax::<NODE_TYPE, OPP, C>(
-							depth.saturating_sub_signed(r),
+							new_depth,
 							ply_from_root + 1,
 							-beta,
 							-alpha,
@@ -468,7 +474,7 @@ impl<'a> SearchCtx<'a> {
 				}
 			} else {
 				score = -self.negamax::<{ node_types::CUT }, OPP, C>(
-					depth.saturating_sub_signed(r),
+					new_depth,
 					ply_from_root + 1,
 					-alpha - 1,
 					-alpha,
