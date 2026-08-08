@@ -6,19 +6,19 @@ use crate::{
 		movegen::{Move, MoveFlag, MoveList},
 		utils::{BLACK, Color, Square, WHITE},
 	},
-	search::SearchCtx,
+	search::{SearchCtx, SupraContextualInfo},
 	tt::TT,
 };
 
 pub struct UCIInstance {
-	tt: TT,
+	info: SupraContextualInfo,
 	position: Board,
 }
 
 impl UCIInstance {
 	pub fn new() -> Self {
 		Self {
-			tt: TT::new(23),
+			info: SupraContextualInfo::new(TT::new(23)),
 			position: Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
 		}
@@ -188,7 +188,8 @@ impl UCIInstance {
 			}
 		}
 
-		let mut search_ctx = SearchCtx::new(&mut self.tt, self.position.clone(), time, inc, depth);
+		let mut search_ctx =
+			SearchCtx::new(&mut self.info, self.position.clone(), time, inc, depth);
 		search_ctx.search();
 	}
 }

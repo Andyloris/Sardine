@@ -29,8 +29,21 @@ struct StackElem {
 	pub excluded: Move,
 }
 
+pub struct SupraContextualInfo {
+	tt: TT,
+	history: [[[i16; 64]; 64]; 2],
+}
+
+impl SupraContextualInfo {
+	pub fn new(tt: TT) -> Self {
+		Self {
+			tt,
+			history: [[[0; 64]; 64]; 2],
+		}
+	}
+}
+
 pub struct SearchCtx<'a> {
-	tt: &'a mut TT,
 	board: Board,
 	search_start: Instant,
 	allocated_time_millis: u64,
@@ -39,16 +52,21 @@ pub struct SearchCtx<'a> {
 	check_counter: usize,
 	stop_search: bool,
 	nodes: u64,
-	history: [[[i16; 64]; 64]; 2],
-	killers: [[Move; 2]; 256],
 	stack: [StackElem; 256],
 	pv_array: [Move; 257 * 256 / 2],
+	info: &'a mut SupraContextualInfo,
+	killers: [[Move; 2]; 256],
 }
 
 impl<'a> SearchCtx<'a> {
-	pub fn new(tt: &'a mut TT, board: Board, time: i32, inc: i32, max_depth: u8) -> Self {
+	pub fn new(
+		info: &'a mut SupraContextualInfo,
+		board: Board,
+		time: i32,
+		inc: i32,
+		max_depth: u8,
+	) -> Self {
 		Self {
-			tt,
 			board,
 			search_start: Instant::now(),
 			allocated_time_millis: (time / 20 + inc / 2) as u64,
@@ -57,10 +75,10 @@ impl<'a> SearchCtx<'a> {
 			check_counter: 0,
 			stop_search: false,
 			nodes: 0,
-			history: [[[0; 64]; 64]; 2],
-			killers: [[Move::default(); 2]; _],
 			stack: core::array::from_fn(|_| Default::default()),
 			pv_array: [Move::default(); _],
+			info,
+			killers: [[Move::default(); 2]; _],
 		}
 	}
 
@@ -144,7 +162,7 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves = 0;
 		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
-			Some(&self.history),
+			Some(&self.info.history),
 			Some(&self.killers[ply_from_root as usize]),
 		) {
 			if !self.board.see_ge::<C, OPP>(*m, -100) {
@@ -223,7 +241,7 @@ impl<'a> SearchCtx<'a> {
 
 		self.nodes += 1;
 
-		let entry = self.tt.probe::<C, OPP>(&self.board).cloned();
+		let entry = self.info.tt.probe::<C, OPP>(&self.board).cloned();
 		if let Some(ref entry) = entry
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& entry.depth >= depth
@@ -359,7 +377,7 @@ impl<'a> SearchCtx<'a> {
 		while let Some(m) = ordered_move_list
 			.pick_move::<C, OPP>(
 				&self.board,
-				Some(&self.history),
+				Some(&self.info.history),
 				Some(&self.killers[ply_from_root as usize]),
 			)
 			.copied()
@@ -504,11 +522,11 @@ impl<'a> SearchCtx<'a> {
 					let bonus = depth as i16 * depth as i16;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
-						move_ordering::update_history::<C>(&mut self.history, from, to, -bonus)
+						move_ordering::update_history::<C>(&mut self.info.history, from, to, -bonus)
 					}
 
 					let (from, to, _) = m.unpack();
-					move_ordering::update_history::<C>(&mut self.history, from, to, bonus)
+					move_ordering::update_history::<C>(&mut self.info.history, from, to, bonus)
 				}
 				break; // Beta-cutoff
 			}
@@ -536,7 +554,7 @@ impl<'a> SearchCtx<'a> {
 		};
 
 		if !self.stack[ply_from_root as usize].history_draw {
-			self.tt.add_entry(
+			self.info.tt.add_entry(
 				&self.board,
 				best_move,
 				depth,
@@ -608,7 +626,7 @@ impl<'a> SearchCtx<'a> {
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
-		let entry = self.tt.probe::<C, OPP>(&self.board);
+		let entry = self.info.tt.probe::<C, OPP>(&self.board);
 		if let Some(entry) = entry
 			&& entry.depth >= depth
 			&& depth == 0
@@ -656,7 +674,7 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
 		while let Some(m) =
-			ordered_move_list.pick_move::<C, OPP>(&self.board, Some(&self.history), None)
+			ordered_move_list.pick_move::<C, OPP>(&self.board, Some(&self.info.history), None)
 		{
 			//for m in move_list.iter() {
 
@@ -750,7 +768,7 @@ impl<'a> SearchCtx<'a> {
 				ScoreType::Exact
 			};
 
-			self.tt.add_entry(
+			self.info.tt.add_entry(
 				&self.board,
 				best_move,
 				depth,
@@ -807,6 +825,16 @@ impl<'a> SearchCtx<'a> {
 		self.search_start = Instant::now();
 		self.nodes = 0;
 		self.seldepth = 0;
+
+		// Age history values between iterations to avoid staleness
+		for i in 0..64 {
+			for j in 0..64 {
+				self.info.history[WHITE as usize][i][j] =
+					(self.info.history[WHITE as usize][i][j] * 3) / 4;
+				self.info.history[BLACK as usize][i][j] =
+					(self.info.history[BLACK as usize][i][j] * 3) / 4;
+			}
+		}
 
 		let mut best_info = match self.board.get_turn() {
 			Color::White => self.bestmove::<WHITE, BLACK>(
