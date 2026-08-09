@@ -382,7 +382,7 @@ impl<'a> SearchCtx<'a> {
 			)
 			.copied()
 		{
-			let mut r: i8 = 0;
+			let mut r: u32 = 0;
 			let mut extension = 0;
 			if m == self.stack[ply_from_root as usize].excluded {
 				continue;
@@ -410,7 +410,7 @@ impl<'a> SearchCtx<'a> {
 				if singular_score < singular_beta {
 					extension += 1;
 				} else if entry.score as i32 >= beta {
-					r += 3;
+					r += 12288;
 				}
 			}
 
@@ -432,20 +432,18 @@ impl<'a> SearchCtx<'a> {
 
 			// Late move reductions (LMR)
 			if (depth >= 3) && (num_legal_moves > 0) {
-				r += (1 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32) / 4096u32) as i8;
+				r += 4096 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32);
 			}
 
-			r = r
-				.saturating_sub(match NODE_TYPE {
-					node_types::PV => 1,
-					_ => 0,
-				})
-				.max(0);
+			r = r.saturating_sub(match NODE_TYPE {
+				node_types::PV => 4096,
+				_ => 0,
+			});
 
 			let new_depth = depth
-				.saturating_sub_signed(r)
+				.saturating_sub((r / 4096) as u8)
 				.saturating_add_signed(extension)
-				.saturating_sub_signed(1);
+				.saturating_sub(1);
 
 			// ToDo: Implementation leaves board messed up after quitting search when timing out
 			let mut score: i32;
