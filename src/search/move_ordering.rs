@@ -217,7 +217,7 @@ impl StagedMoveList {
 	}
 }
 
-const MAX_HISTORY: i16 = 24576;
+const MAX_HISTORY: i16 = 16384;
 
 pub fn update_history<const C: u8>(
 	history: &mut [[[i16; 64]; 64]; 2],
