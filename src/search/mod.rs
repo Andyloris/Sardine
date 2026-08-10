@@ -432,7 +432,8 @@ impl<'a> SearchCtx<'a> {
 
 			// Late move reductions (LMR)
 			if (depth >= 3) && (num_legal_moves > 0) {
-				r += 4096 + (depth.ilog2() * num_legal_moves.ilog2() * 625u32);
+				r += 4096
+					+ (depth.ilog2() * num_legal_moves.ilog2() * (725u32 - 200 * improving as u32));
 			}
 
 			r = r.saturating_sub(match NODE_TYPE {
