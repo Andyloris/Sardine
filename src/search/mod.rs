@@ -258,10 +258,6 @@ impl<'a> SearchCtx<'a> {
 		}
 
 		let is_in_check = self.stack[ply_from_root as usize].checkers_mask != 0;
-		// Check extension
-		if is_in_check {
-			depth += 1;
-		}
 
 		if depth == 0 {
 			return self.quiescence_search::<C, OPP>(ply_from_root, alpha, beta);
@@ -430,10 +426,17 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			// Check extension
+			if checkers_mask != 0 {
+				extension += 1;
+			}
+
 			// Late move reductions (LMR)
 			if (depth >= 3) && (num_legal_moves > 0) {
 				r += 4096
-					+ (depth.ilog2() * num_legal_moves.ilog2() * (725u32 - 200 * improving as u32));
+					+ (depth.ilog2()
+						* num_legal_moves.ilog2()
+						* (725u32 - 200 * improving as u32 - 100 * is_in_check as u32));
 			}
 
 			r = r.saturating_sub(match NODE_TYPE {
