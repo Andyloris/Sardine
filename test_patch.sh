@@ -19,4 +19,4 @@ fastchess -engine cmd=./test/eng1 name=NewSardine \
 	-concurrency 15 \
 	-recover \
 	-openings file="$BOOK" format=pgn order=random \
-	-sprt elo0=0 elo1=10 alpha=0.05 beta=0.05 model=logistic
+	-sprt elo0=0 elo1=5 alpha=0.05 beta=0.05 model=logistic
