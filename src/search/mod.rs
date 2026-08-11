@@ -436,7 +436,12 @@ impl<'a> SearchCtx<'a> {
 				r += 4096
 					+ (depth.ilog2()
 						* num_legal_moves.ilog2()
-						* (725u32 - 200 * improving as u32 - 100 * is_in_check as u32));
+						* (725u32
+							- 200 * improving as u32
+							- 200
+								* (m == self.killers[ply_from_root as usize][0]
+									|| m == self.killers[ply_from_root as usize][1])
+									as u32));
 			}
 
 			r = r.saturating_sub(match NODE_TYPE {
