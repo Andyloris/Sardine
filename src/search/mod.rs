@@ -441,7 +441,7 @@ impl<'a> SearchCtx<'a> {
 							- 200
 								* (m == self.killers[ply_from_root as usize][0]
 									|| m == self.killers[ply_from_root as usize][1])
-									as u32));
+									as u32) + 200 * (NODE_TYPE == node_types::CUT) as u32);
 			}
 
 			r = r.saturating_sub(match NODE_TYPE {
