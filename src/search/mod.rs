@@ -494,6 +494,40 @@ impl<'a> SearchCtx<'a> {
 					-alpha,
 					pv_next_index,
 				)?;
+
+				if score > alpha && r != 0 {
+					let new_depth = depth - 1;
+					match NODE_TYPE {
+						node_types::CUT => {
+							score = -self.negamax::<{ node_types::ALL }, OPP, C>(
+								new_depth,
+								ply_from_root + 1,
+								-alpha - 1,
+								-alpha,
+								pv_next_index,
+							)?
+						}
+						node_types::ALL => {
+							score = -self.negamax::<{ node_types::CUT }, OPP, C>(
+								new_depth,
+								ply_from_root + 1,
+								-alpha - 1,
+								-alpha,
+								pv_next_index,
+							)?
+						}
+						_ => {
+							score = -self.negamax::<NODE_TYPE, OPP, C>(
+								new_depth,
+								ply_from_root + 1,
+								-alpha - 1,
+								-alpha,
+								pv_next_index,
+							)?
+						}
+					}
+				}
+
 				if score > alpha && NODE_TYPE == node_types::PV {
 					score = -self.negamax::<{ node_types::PV }, OPP, C>(
 						depth - 1,
