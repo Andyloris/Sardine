@@ -130,8 +130,9 @@ impl From<u8> for Color {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Piece {
+	#[default]
 	Pawn = 0,
 	Knight = 1,
 	Bishop = 2,

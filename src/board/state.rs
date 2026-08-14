@@ -131,6 +131,7 @@ impl Board {
 				));
 
 				self.evaluation_move_piece::<C>(from, to, piece);
+				self.piece_list.piece_list_move_piece(from, to);
 
 				if piece == Piece::Pawn {
 					self.halfmove_clock = 0;
@@ -170,6 +171,7 @@ impl Board {
 				));
 
 				self.evaluation_move_piece::<C>(from, to, Piece::Pawn);
+				self.piece_list.piece_list_move_piece(from, to);
 
 				should_reset_enpassant = false;
 				self.halfmove_clock = 0;
@@ -215,6 +217,8 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(from, to, Piece::King);
 				self.evaluation_move_piece::<C>(rook_from, rook_to, Piece::Rook);
+				self.piece_list.piece_list_move_piece(from, to);
+				self.piece_list.piece_list_move_piece(rook_from, rook_to);
 
 				if self.king_castle_flags[C as usize] {
 					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
@@ -267,6 +271,8 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(from, to, Piece::King);
 				self.evaluation_move_piece::<C>(rook_from, rook_to, Piece::Rook);
+				self.piece_list.piece_list_move_piece(from, to);
+				self.piece_list.piece_list_move_piece(rook_from, rook_to);
 
 				if self.king_castle_flags[C as usize] {
 					self.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::from(C)));
@@ -366,6 +372,7 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(from, to, piece);
 				self.evaluation_remove_piece::<OPP>(to, victim);
+				self.piece_list.piece_list_move_piece(from, to);
 			}
 
 			MoveFlag::EpCaptures => {
@@ -406,6 +413,8 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(from, to, Piece::Pawn);
 				self.evaluation_remove_piece::<OPP>(victim_square, Piece::Pawn);
+				self.piece_list.piece_list_move_piece(from, to);
+				self.piece_list.piece_list_remove_piece(victim_square);
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -432,6 +441,9 @@ impl Board {
 
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_add_piece::<C>(to, Piece::Knight);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -458,6 +470,9 @@ impl Board {
 
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_add_piece::<C>(to, Piece::Bishop);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
 			}
 
 			MoveFlag::RookPromotion => {
@@ -484,6 +499,9 @@ impl Board {
 
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_add_piece::<C>(to, Piece::Rook);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -510,6 +528,9 @@ impl Board {
 
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_add_piece::<C>(to, Piece::Queen);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
 			}
 
 			MoveFlag::KnightPromoCapture => {
@@ -566,6 +587,9 @@ impl Board {
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<OPP>(to, victim);
 				self.evaluation_add_piece::<C>(to, Piece::Knight);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Knight, Color::from(C)));
 			}
 
 			MoveFlag::BishopPromoCapture => {
@@ -622,6 +646,9 @@ impl Board {
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<OPP>(to, victim);
 				self.evaluation_add_piece::<C>(to, Piece::Bishop);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Bishop, Color::from(C)));
 			}
 
 			MoveFlag::RookPromoCapture => {
@@ -678,6 +705,9 @@ impl Board {
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<OPP>(to, victim);
 				self.evaluation_add_piece::<C>(to, Piece::Rook);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Rook, Color::from(C)));
 			}
 
 			MoveFlag::QueenPromoCapture => {
@@ -734,6 +764,9 @@ impl Board {
 				self.evaluation_remove_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<OPP>(to, victim);
 				self.evaluation_add_piece::<C>(to, Piece::Queen);
+				self.piece_list.piece_list_remove_piece(from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(Piece::Queen, Color::from(C)));
 			}
 		};
 
@@ -787,6 +820,7 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.evaluation_move_piece::<C>(to, from, piece);
+				self.piece_list.piece_list_move_piece(to, from);
 			}
 
 			MoveFlag::DoublePush => {
@@ -800,6 +834,7 @@ impl Board {
 				self.occupied ^= from_to;
 
 				self.evaluation_move_piece::<C>(to, from, Piece::Pawn);
+				self.piece_list.piece_list_move_piece(to, from);
 			}
 
 			MoveFlag::KCastle => {
@@ -824,6 +859,8 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(to, from, Piece::King);
 				self.evaluation_move_piece::<C>(rook_to, rook_from, Piece::Rook);
+				self.piece_list.piece_list_move_piece(to, from);
+				self.piece_list.piece_list_move_piece(rook_to, rook_from);
 			}
 
 			MoveFlag::QCastle => {
@@ -848,6 +885,8 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(to, from, Piece::King);
 				self.evaluation_move_piece::<C>(rook_to, rook_from, Piece::Rook);
+				self.piece_list.piece_list_move_piece(to, from);
+				self.piece_list.piece_list_move_piece(rook_to, rook_from);
 			}
 
 			MoveFlag::Captures => {
@@ -866,6 +905,9 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(to, from, piece);
 				self.evaluation_add_piece::<OPP>(to, victim);
+				self.piece_list.piece_list_move_piece(to, from);
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(victim, Color::from(OPP)));
 			}
 
 			MoveFlag::EpCaptures => {
@@ -888,6 +930,11 @@ impl Board {
 
 				self.evaluation_move_piece::<C>(to, from, Piece::Pawn);
 				self.evaluation_add_piece::<OPP>(victim_square, Piece::Pawn);
+				self.piece_list.piece_list_move_piece(to, from);
+				self.piece_list.piece_list_add_piece(
+					victim_square,
+					PieceColorPair(Piece::Pawn, Color::from(OPP)),
+				);
 			}
 
 			MoveFlag::KnightPromotion => {
@@ -903,6 +950,9 @@ impl Board {
 
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Knight);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list.piece_list_remove_piece(to);
 			}
 
 			MoveFlag::BishopPromotion => {
@@ -918,6 +968,9 @@ impl Board {
 
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Bishop);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list.piece_list_remove_piece(to);
 			}
 
 			MoveFlag::RookPromotion => {
@@ -933,6 +986,9 @@ impl Board {
 
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Rook);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list.piece_list_remove_piece(to);
 			}
 
 			MoveFlag::QueenPromotion => {
@@ -948,6 +1004,9 @@ impl Board {
 
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Queen);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list.piece_list_remove_piece(to);
 			}
 
 			MoveFlag::KnightPromoCapture => {
@@ -967,6 +1026,10 @@ impl Board {
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Knight);
 				self.evaluation_add_piece::<OPP>(to, victim);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(victim, Color::from(OPP)));
 			}
 
 			MoveFlag::BishopPromoCapture => {
@@ -986,6 +1049,10 @@ impl Board {
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Bishop);
 				self.evaluation_add_piece::<OPP>(to, victim);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(victim, Color::from(OPP)));
 			}
 
 			MoveFlag::RookPromoCapture => {
@@ -1005,6 +1072,10 @@ impl Board {
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Rook);
 				self.evaluation_add_piece::<OPP>(to, victim);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(victim, Color::from(OPP)));
 			}
 
 			MoveFlag::QueenPromoCapture => {
@@ -1024,6 +1095,10 @@ impl Board {
 				self.evaluation_add_piece::<C>(from, Piece::Pawn);
 				self.evaluation_remove_piece::<C>(to, Piece::Queen);
 				self.evaluation_add_piece::<OPP>(to, victim);
+				self.piece_list
+					.piece_list_add_piece(from, PieceColorPair(Piece::Pawn, Color::from(C)));
+				self.piece_list
+					.piece_list_add_piece(to, PieceColorPair(victim, Color::from(OPP)));
 			}
 		}
 

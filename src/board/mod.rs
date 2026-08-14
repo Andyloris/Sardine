@@ -12,11 +12,55 @@ use std::{fmt::Display, num::NonZero};
 
 use crate::board::{
 	utils::{
-		BLACK_SQUARES, Color, NUM_COLORS, NUM_PIECES, PIECES, Piece, PieceColorPair, Square,
-		WHITE_SQUARES,
+		BLACK_SQUARES, Color, NUM_COLORS, NUM_PIECES, Piece, PieceColorPair, Square, WHITE_SQUARES,
 	},
 	zobrist::ZobristDelta,
 };
+
+#[derive(Clone)]
+struct PieceList {
+	pieces: [u8; 64],
+}
+
+impl Default for PieceList {
+	fn default() -> Self {
+		Self { pieces: [0xFF; 64] }
+	}
+}
+
+impl PieceList {
+	const SENTINEL: u8 = 0xFF;
+	#[inline(always)]
+	pub fn index(&self, sq: u8) -> Option<PieceColorPair> {
+		let piece = self.pieces[sq as usize];
+		if piece == Self::SENTINEL {
+			return None;
+		}
+
+		Some(PieceColorPair(
+			Piece::from(piece & 7),
+			Color::from(piece >> 7),
+		))
+	}
+
+	pub const fn pack_piece_color_pair(piece_color_pair: PieceColorPair) -> u8 {
+		let PieceColorPair(piece, color) = piece_color_pair;
+		piece as u8 | ((color as u8) << 7)
+	}
+
+	pub fn piece_list_add_piece(&mut self, sq: u8, piece_color_pair: PieceColorPair) {
+		self.pieces[sq as usize] = Self::pack_piece_color_pair(piece_color_pair);
+	}
+
+	pub fn piece_list_remove_piece(&mut self, sq: u8) {
+		self.pieces[sq as usize] = Self::SENTINEL;
+	}
+
+	pub fn piece_list_move_piece(&mut self, from: u8, to: u8) {
+		self.pieces[to as usize] = self.pieces[from as usize];
+		self.pieces[from as usize] = Self::SENTINEL;
+	}
+}
 
 #[derive(Clone, Default)]
 pub struct Board {
@@ -33,6 +77,8 @@ pub struct Board {
 
 	zobrist: u64,
 	hash_history: Vec<u64>,
+
+	piece_list: PieceList,
 
 	mg_material_score: i16,
 	eg_material_score: i16,
@@ -62,8 +108,8 @@ impl Board {
 			|| self.pieces[C as usize][Piece::Queen as usize] != 0
 	}
 
-	pub const fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
-		let mask = 1u64 << sq;
+	pub fn get_piece_at_square<const C: u8>(&self, sq: u8) -> Option<Piece> {
+		/*let mask = 1u64 << sq;
 		if (self.pieces[C as usize][Piece::Pawn as usize] & mask) != 0 {
 			return Some(Piece::Pawn);
 		}
@@ -86,6 +132,14 @@ impl Board {
 
 		if (self.pieces[C as usize][Piece::King as usize] & mask) != 0 {
 			return Some(Piece::King);
+		}*/
+
+		if let Some(PieceColorPair(piece, color)) = self.piece_list.index(sq) {
+			if color as u8 != C {
+				return None;
+			}
+
+			return Some(piece);
 		}
 
 		None
@@ -125,6 +179,9 @@ impl Board {
 						PieceColorPair(piece, color),
 						sq,
 					));
+					board
+						.piece_list
+						.piece_list_add_piece(sq, PieceColorPair(piece, color));
 					file += 1;
 				}
 			};
@@ -209,33 +266,6 @@ impl Board {
 		self.occupied = self.pieces_by_color[Color::White as usize]
 			| self.pieces_by_color[Color::Black as usize];
 		self.empty = !self.occupied;
-	}
-
-	pub fn as_piece_list(&self) -> Vec<Option<PieceColorPair>> {
-		let mut res = vec![None; 64];
-		for (sq, piece_col_pair) in res.iter_mut().enumerate() {
-			let mask = 1u64 << sq;
-			if (self.empty & mask) != 0 {
-				continue;
-			}
-
-			if (self.pieces_by_color[Color::White as usize] & mask) != 0 {
-				for piece in PIECES {
-					if (self.pieces[Color::White as usize][piece as usize] & mask) != 0 {
-						*piece_col_pair = Some(PieceColorPair(piece, Color::White));
-						break;
-					}
-				}
-			} else if (self.pieces_by_color[Color::Black as usize] & mask) != 0 {
-				for piece in PIECES {
-					if (self.pieces[Color::Black as usize][piece as usize] & mask) != 0 {
-						*piece_col_pair = Some(PieceColorPair(piece, Color::Black));
-						break;
-					}
-				}
-			}
-		}
-		res
 	}
 
 	// Only one repetition for draw score
@@ -348,14 +378,12 @@ impl Board {
 
 impl Display for Board {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let piece_list = self.as_piece_list();
-
 		writeln!(f, "  A B C D E F G H")?;
 		for rank in (0..8).rev() {
 			write!(f, "{} ", rank + 1)?;
 			for file in 0..8 {
 				let Square(sq) = Square::from_rank_file(rank, file);
-				match piece_list[sq as usize] {
+				match self.piece_list.index(sq) {
 					None => write!(f, "  ")?,
 					Some(pair) => write!(f, "{} ", <PieceColorPair as Into<char>>::into(pair))?,
 				};

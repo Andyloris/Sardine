@@ -47,6 +47,7 @@ impl UCIInstance {
 	}
 
 	fn eval(&self) {
+		println!("{}", self.position);
 		println!(
 			"{}",
 			match self.position.get_turn() {
