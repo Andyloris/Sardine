@@ -1,5 +1,6 @@
 use crate::board::{
 	Board,
+	eval::MATERIAL_WEIGHTS,
 	movegen::{MAX_MOVE_LIST_SIZE, Move, MoveFlag, MoveList},
 	utils::{BLACK, Color, NUM_PIECES, Piece, WHITE},
 };
@@ -114,39 +115,35 @@ impl StagedMoveList {
 		board: &Board,
 		m: &Move,
 		history: Option<&[[[i16; 64]; 64]; 2]>,
+		capture_history: &[[[i16; 64]; 6]; 6],
 		killers: Option<&[Move; 2]>,
 	) -> i32 {
 		let (from, to, flags) = m.unpack();
-		if flags == MoveFlag::EpCaptures {
-			return MVV_LVA_LOOKUP[Piece::Pawn as usize][Piece::Pawn as usize];
+		if m.is_promotion() {
+			return 10000000;
 		}
 
 		match self.cur_stage {
 			MoveListStages::HashMove => i32::MAX - 1,
 			MoveListStages::Captures => {
 				let from = board.get_piece_at_square::<C>(from).unwrap();
-				// Not E.P. thanks to short-circuit above. So we must have a victim on the to square
-				let victim = board.get_piece_at_square::<OPP>(to).unwrap();
-				MVV_LVA_LOOKUP[from as usize][victim as usize]
+				let victim = board.get_piece_at_square::<OPP>(to).unwrap_or(Piece::Pawn);
+				MVV_LVA_LOOKUP[from as usize][victim as usize] * 9
+					+ capture_history[from as usize][victim as usize][to as usize] as i32
 			}
 
 			MoveListStages::Quiets => {
-				let mut score = 0;
-				if m.is_promotion() {
-					score += 1000000;
-				}
-
 				if let Some(killers) = killers
 					&& (*m == killers[0] || *m == killers[1])
 				{
-					score += 1000000;
+					return 1000000;
 				}
 
 				if let Some(history) = history {
-					score += history[C as usize][from as usize][to as usize] as i32;
+					history[C as usize][from as usize][to as usize] as i32
+				} else {
+					0
 				}
-
-				score
 			}
 
 			MoveListStages::Finished => 0,
@@ -157,6 +154,7 @@ impl StagedMoveList {
 		&mut self,
 		board: &Board,
 		history: Option<&[[[i16; 64]; 64]; 2]>,
+		capture_history: &[[[i16; 64]; 6]; 6],
 		killers: Option<&[Move; 2]>,
 	) -> Option<&Move> {
 		if self.cur_stage == MoveListStages::Finished {
@@ -167,7 +165,7 @@ impl StagedMoveList {
 			self.cur_stage = self.cur_stage.next();
 			if self.only_captures && self.cur_stage == MoveListStages::Quiets {
 				self.cur_stage = self.cur_stage.next();
-				return self.pick_move::<C, OPP>(board, history, killers);
+				return self.pick_move::<C, OPP>(board, history, capture_history, killers);
 			}
 
 			let old_list_len = self.cur_move_list.len();
@@ -179,11 +177,12 @@ impl StagedMoveList {
 					board,
 					&self.cur_move_list.as_slice()[i],
 					history,
+					capture_history,
 					killers,
 				);
 			}
 
-			return self.pick_move::<C, OPP>(board, history, killers);
+			return self.pick_move::<C, OPP>(board, history, capture_history, killers);
 		}
 
 		let mut best_move_idx = self.current_move_idx;
@@ -206,7 +205,7 @@ impl StagedMoveList {
 			&& let Some(hash_move) = self.hash_move
 			&& hash_move == m
 		{
-			return self.pick_move::<C, OPP>(board, history, killers);
+			return self.pick_move::<C, OPP>(board, history, capture_history, killers);
 		}
 
 		Some(&self.cur_move_list.as_slice()[self.current_move_idx - 1])
@@ -227,6 +226,21 @@ pub fn update_history<const C: u8>(
 ) {
 	let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
 	let history_val = &mut history[C as usize][from as usize][to as usize];
+	// We need the casts to i32s to avoid overflowing
+	*history_val += clamped_bonus
+		- ((*history_val as i32 * clamped_bonus.abs() as i32) / MAX_HISTORY as i32) as i16;
+}
+
+pub fn update_capture_history(
+	capture_history: &mut [[[i16; 64]; 6]; 6],
+	from_piece: Piece,
+	victim: Piece,
+	to_square: u8,
+	bonus: i16,
+) {
+	let clamped_bonus = bonus.clamp(-MAX_HISTORY, MAX_HISTORY);
+	let history_val =
+		&mut capture_history[from_piece as usize][victim as usize][to_square as usize];
 	// We need the casts to i32s to avoid overflowing
 	*history_val += clamped_bonus
 		- ((*history_val as i32 * clamped_bonus.abs() as i32) / MAX_HISTORY as i32) as i16;

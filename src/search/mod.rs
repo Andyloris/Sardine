@@ -6,7 +6,7 @@ use crate::{
 	board::{
 		Board,
 		movegen::{Move, MoveList},
-		utils::{BLACK, Color, WHITE},
+		utils::{BLACK, Color, Piece, WHITE},
 	},
 	search::move_ordering::{MoveListStages, StagedMoveList},
 	tt::{ScoreType, TT},
@@ -32,6 +32,7 @@ struct StackElem {
 pub struct SupraContextualInfo {
 	tt: TT,
 	history: [[[i16; 64]; 64]; 2],
+	capture_history: [[[i16; 64]; 6]; 6],
 }
 
 impl SupraContextualInfo {
@@ -39,6 +40,7 @@ impl SupraContextualInfo {
 		Self {
 			tt,
 			history: [[[0; 64]; 64]; 2],
+			capture_history: [[[0; 64]; 6]; 6],
 		}
 	}
 }
@@ -163,6 +165,7 @@ impl<'a> SearchCtx<'a> {
 		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
 			Some(&self.info.history),
+			&self.info.capture_history,
 			Some(&self.killers[ply_from_root as usize]),
 		) {
 			if !self.board.see_ge::<C, OPP>(*m, -100) {
@@ -365,6 +368,7 @@ impl<'a> SearchCtx<'a> {
 		);
 
 		let mut searched_quiets = MoveList::default();
+		let mut searched_captures = MoveList::default();
 
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves: usize = 0;
@@ -374,6 +378,7 @@ impl<'a> SearchCtx<'a> {
 			.pick_move::<C, OPP>(
 				&self.board,
 				Some(&self.info.history),
+				&self.info.capture_history,
 				Some(&self.killers[ply_from_root as usize]),
 			)
 			.copied()
@@ -569,11 +574,11 @@ impl<'a> SearchCtx<'a> {
 
 			if alpha >= beta {
 				if m.is_quiet() && !m.is_promotion() {
+					let bonus = depth as i16 * depth as i16;
 					self.killers[ply_from_root as usize][1] =
 						self.killers[ply_from_root as usize][0];
 					self.killers[ply_from_root as usize][0] = m;
 
-					let bonus = depth as i16 * depth as i16;
 					for quiet in searched_quiets.iter() {
 						let (from, to, _) = quiet.unpack();
 						move_ordering::update_history::<C>(&mut self.info.history, from, to, -bonus)
@@ -581,12 +586,41 @@ impl<'a> SearchCtx<'a> {
 
 					let (from, to, _) = m.unpack();
 					move_ordering::update_history::<C>(&mut self.info.history, from, to, bonus)
+				} else if !m.is_quiet() && !m.is_promotion() {
+					let bonus = (168 * depth as i16 - 100).min(1718);
+					let (from, to, _) = m.unpack();
+					move_ordering::update_capture_history(
+						&mut self.info.capture_history,
+						self.board.get_piece_at_square::<C>(from)?,
+						self.board
+							.get_piece_at_square::<OPP>(to)
+							.unwrap_or(Piece::Pawn),
+						to,
+						bonus,
+					);
 				}
+
+				let malus = (768 * depth as i16 - 257).min(2357);
+				for capture in searched_captures.iter() {
+					let (from, to, _) = capture.unpack();
+					move_ordering::update_capture_history(
+						&mut self.info.capture_history,
+						self.board.get_piece_at_square::<C>(from)?,
+						self.board
+							.get_piece_at_square::<OPP>(to)
+							.unwrap_or(Piece::Pawn),
+						to,
+						-malus,
+					);
+				}
+
 				break; // Beta-cutoff
 			}
 
 			if m.is_quiet() {
 				searched_quiets.push(m);
+			} else {
+				searched_captures.push(m);
 			}
 		}
 
@@ -727,9 +761,12 @@ impl<'a> SearchCtx<'a> {
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(m) =
-			ordered_move_list.pick_move::<C, OPP>(&self.board, Some(&self.info.history), None)
-		{
+		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
+			&self.board,
+			Some(&self.info.history),
+			&self.info.capture_history,
+			None,
+		) {
 			//for m in move_list.iter() {
 
 			// Avoids playing illegal moves when running out of time
@@ -887,6 +924,15 @@ impl<'a> SearchCtx<'a> {
 					(self.info.history[WHITE as usize][i][j] * 3) / 4;
 				self.info.history[BLACK as usize][i][j] =
 					(self.info.history[BLACK as usize][i][j] * 3) / 4;
+			}
+		}
+
+		for i in 0..6 {
+			for j in 0..6 {
+				for k in 0..64 {
+					self.info.capture_history[i][j][k] =
+						(self.info.capture_history[i][j][k] * 3) / 4;
+				}
 			}
 		}
 
