@@ -393,6 +393,15 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			if depth < 5
+				&& !self
+					.board
+					.see_ge::<C, OPP>(m, -50 * depth as i16 * depth as i16)
+			{
+				num_legal_moves += 1;
+				continue;
+			}
+
 			if self.stack[ply_from_root as usize].excluded == Move::default()
 				&& let Some(entry) = &entry
 				&& ordered_move_list.stage() == MoveListStages::HashMove
