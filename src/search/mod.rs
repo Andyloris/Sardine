@@ -171,14 +171,14 @@ impl<'a> SearchCtx<'a> {
 			if !self.board.see_ge::<C, OPP>(*m, -100) {
 				continue;
 			}
-			//for m in move_list.iter() {
-			let undo_info = self.board.do_move::<C, OPP>(m)?;
 
-			if self.board.is_in_check::<C, OPP>() {
-				self.board.undo_move::<C, OPP>(undo_info, m)?;
+			if !self.board.is_legal::<C, OPP>(m) {
 				continue;
 			}
 			num_legal_moves += 1;
+
+			//for m in move_list.iter() {
+			let undo_info = self.board.do_move::<C, OPP>(m)?;
 
 			let score = -self.quiescence_search::<OPP, C>(ply_from_root + 1, -beta, -alpha)?;
 
@@ -389,6 +389,10 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
+			if !self.board.is_legal::<C, OPP>(&m) {
+				continue;
+			}
+
 			if self.stack[ply_from_root as usize].excluded == Move::default()
 				&& let Some(entry) = &entry
 				&& ordered_move_list.stage() == MoveListStages::HashMove
@@ -418,10 +422,6 @@ impl<'a> SearchCtx<'a> {
 			//for m in move_list.iter() {
 			let undo_info = self.board.do_move::<C, OPP>(&m).unwrap();
 
-			if self.board.is_in_check::<C, OPP>() {
-				self.board.undo_move::<C, OPP>(undo_info, &m);
-				continue;
-			}
 			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
 			self.stack[ply_from_root as usize + 1].checkers_mask = checkers_mask;
 
@@ -767,6 +767,9 @@ impl<'a> SearchCtx<'a> {
 			&self.info.capture_history,
 			None,
 		) {
+			if !self.board.is_legal::<C, OPP>(m) {
+				continue;
+			}
 			//for m in move_list.iter() {
 
 			// Avoids playing illegal moves when running out of time
@@ -789,10 +792,6 @@ impl<'a> SearchCtx<'a> {
 
 			let undo_info = self.board.do_move::<C, OPP>(m)?;
 
-			if self.board.is_in_check::<C, OPP>() {
-				self.board.undo_move::<C, OPP>(undo_info, m)?;
-				continue;
-			}
 			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
 			self.stack[1].checkers_mask = checkers_mask;
 

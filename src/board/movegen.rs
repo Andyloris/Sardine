@@ -6,11 +6,11 @@ use crate::board::{
 		get_king_attacks, get_knight_attacks, get_pawn_attacks, get_pawns_able_to_attack_east_bb,
 		get_pawns_able_to_attack_west_bb, get_sliding_attacks,
 	},
-	in_between::in_between_mask,
+	in_between::{in_between_mask, line_bb_mask},
 	quiets::{get_pawns_able_to_double_push, get_pawns_able_to_push},
 	utils::{
-		BLACK, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_1, RANK_2, RANK_7, RANK_8,
-		Square, Squares, WHITE, clear_lsb,
+		BLACK, Bitboard, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_1, RANK_2,
+		RANK_7, RANK_8, Square, Squares, WHITE, clear_lsb,
 		direction::{self, N, S},
 		shift_bb,
 	},
@@ -1011,8 +1011,6 @@ impl Board {
 					}),
 		);
 
-		// Partition into pawns that can only single push
-		let no_promo_single_push = no_promo_double_push ^ no_promo_single_push;
 		let single_push_off = match C {
 			WHITE => N,
 			BLACK => S,
@@ -1033,12 +1031,6 @@ impl Board {
 		);
 		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
 			no_promo_single_push,
-			single_push_off,
-			MoveFlag::Quiet,
-			buf,
-		);
-		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
-			no_promo_double_push,
 			single_push_off,
 			MoveFlag::Quiet,
 			buf,
@@ -1141,9 +1133,6 @@ impl Board {
 					}),
 		);
 
-		// Partition into pawns that can only single push
-		let no_promo_single_push = no_promo_double_push ^ no_promo_single_push;
-
 		let pawn_capt_west_offset = match C {
 			WHITE => direction::NW,
 			BLACK => direction::SW,
@@ -1226,12 +1215,6 @@ impl Board {
 		);
 		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
 			no_promo_single_push,
-			single_push_off,
-			MoveFlag::Quiet,
-			buf,
-		);
-		Self::serialize_with_offset::<{ serialization_flags::CUSTOM }>(
-			no_promo_double_push,
 			single_push_off,
 			MoveFlag::Quiet,
 			buf,
@@ -1437,5 +1420,55 @@ impl Board {
 					&& (to_mask & get_pawn_attacks::<C>(from)) != 0
 			}
 		}
+	}
+
+	fn get_slider_blockers<const C: u8, const OPP: u8>(&self, excluded: u64) -> u64 {
+		let king_sq = self.pieces[C as usize][Piece::King as usize].trailing_zeros() as u8;
+		let rooks_queens = self.pieces[OPP as usize][Piece::Rook as usize]
+			| self.pieces[OPP as usize][Piece::Queen as usize];
+		let bishops_queens = self.pieces[OPP as usize][Piece::Bishop as usize]
+			| self.pieces[OPP as usize][Piece::Queen as usize];
+
+		let mut blockers = 0;
+		let mut snipers = (get_sliding_attacks::<false>(king_sq, 0) & rooks_queens)
+			| (get_sliding_attacks::<true>(king_sq, 0) & bishops_queens);
+		let occ = self.occupied ^ snipers ^ excluded;
+		while snipers != 0 {
+			let sniper_sq = snipers.trailing_zeros() as u8;
+			clear_lsb(&mut snipers);
+			let b = in_between_mask(king_sq, sniper_sq) & occ;
+
+			if b != 0 && (b & (b - 1)) == 0 {
+				blockers |= b;
+			}
+		}
+
+		blockers
+	}
+
+	pub fn is_legal<const C: u8, const OPP: u8>(&self, m: &Move) -> bool {
+		let (from, to, flags) = m.unpack();
+
+		let excluded = if flags == MoveFlag::EpCaptures {
+			let en_passant_victim = to.saturating_add_signed(match C {
+				WHITE => S,
+				BLACK => N,
+				_ => 0,
+			});
+
+			1u64 << en_passant_victim
+		} else {
+			0
+		};
+
+		let from_piece = self.get_piece_at_square::<C>(from).unwrap();
+		if from_piece == Piece::King {
+			let occ = self.occupied ^ (1u64 << from);
+			return self.attacks_to_square_with_occ::<OPP, C>(to, &occ) == 0;
+		}
+
+		let blockers = self.get_slider_blockers::<C, OPP>(excluded);
+		blockers & (1u64 << from) == 0
+			|| (line_bb_mask(from, to) & self.pieces[C as usize][Piece::King as usize] != 0)
 	}
 }

@@ -16,7 +16,7 @@ mod tt;
 mod tuning;
 mod uci;
 
-fn perft_driver(brd: &mut Board, d: usize) -> u64 {
+fn perft_driver<const C: u8, const OPP: u8>(brd: &mut Board, d: usize) -> u64 {
 	if d == 0 {
 		return 1;
 	}
@@ -27,30 +27,13 @@ fn perft_driver(brd: &mut Board, d: usize) -> u64 {
 
 	let mut nodes = 0;
 	for m in move_list.iter() {
-		let undo_info = match brd.get_turn() {
-			Color::White => brd.do_move::<WHITE, BLACK>(m),
-			Color::Black => brd.do_move::<BLACK, WHITE>(m),
-		}
-		.unwrap();
-
-		if match brd.get_turn() {
-			Color::White => brd.is_in_check::<BLACK, WHITE>(),
-			Color::Black => brd.is_in_check::<WHITE, BLACK>(),
-		} {
-			match brd.get_turn() {
-				Color::Black => brd.undo_move::<WHITE, BLACK>(undo_info, m),
-				Color::White => brd.undo_move::<BLACK, WHITE>(undo_info, m),
-			};
+		if !brd.is_legal::<C, OPP>(m) {
 			continue;
 		}
 
-		nodes += perft_driver(brd, d - 1);
-
-		match brd.get_turn() {
-			Color::Black => brd.undo_move::<WHITE, BLACK>(undo_info, m),
-			Color::White => brd.undo_move::<BLACK, BLACK>(undo_info, m),
-		}
-		.unwrap();
+		let undo_info = brd.do_move::<C, OPP>(m).unwrap();
+		nodes += perft_driver::<OPP, C>(brd, d - 1);
+		brd.undo_move::<C, OPP>(undo_info, m).unwrap();
 	}
 	nodes
 }
@@ -110,19 +93,13 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 	let mut my_moves = move_list
 		.iter()
 		.filter_map(|m| {
-			let mut brd_cpy = brd.clone();
-			match brd.get_turn() {
-				Color::White => brd_cpy.do_move::<WHITE, BLACK>(m),
-				Color::Black => brd_cpy.do_move::<BLACK, WHITE>(m),
-			};
-
-			if match brd_cpy.get_turn() {
-				Color::White => brd_cpy.is_in_check::<BLACK, WHITE>(),
-				Color::Black => brd_cpy.is_in_check::<WHITE, BLACK>(),
+			if match brd.get_turn() {
+				Color::White => !brd.is_legal::<WHITE, BLACK>(m),
+				Color::Black => !brd.is_legal::<BLACK, WHITE>(m),
 			} {
 				None
 			} else {
-				let (from, to, _) = m.unpack();
+				let (from, to, flags) = m.unpack();
 				Some((from, to, *m))
 			}
 		})
@@ -218,7 +195,13 @@ fn test_against_shakmaty(fen: &str, max_depth: usize) {
 	for d in 1..=max_depth {
 		let mut pv = vec![];
 		coupled_perft(&shakmaty_pos, &board, d, &mut pv);
-		println!("Searched nodes: {}", perft_driver(&mut board, d));
+		println!(
+			"Searched nodes: {}",
+			match board.get_turn() {
+				Color::White => perft_driver::<WHITE, BLACK>(&mut board, d),
+				Color::Black => perft_driver::<BLACK, WHITE>(&mut board, d),
+			}
+		);
 		println!("Shakmaty nodes: {}\n", shakmaty_perft(&shakmaty_pos, d));
 	}
 }
@@ -235,7 +218,7 @@ fn main() {
 	//	println!("Perft: {}", perft(&board, 2));
 	//perft(&board, 3);
 	/*test_against_shakmaty(
-		"rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8  ",
+		"rn1qk2r/p1pp1ppp/bp2p3/4P3/1b1PP3/8/PPP1K1PP/RNBQ1BNR w kq - 1 2",
 		5,
 	);*/
 
