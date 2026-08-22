@@ -69,32 +69,6 @@ pub const fn shift_bb<const D: i8>(bb: u64) -> u64 {
 	}
 }
 
-pub const fn shift_bb_unchecked<const D: i8>(bb: u64) -> u64 {
-	match D {
-		direction::N => bb << 8,
-		direction::S => bb >> 8,
-		direction::NN => bb << 16,
-		direction::SS => bb >> 16,
-		direction::E => bb << 1,
-		direction::EE => bb << 2,
-		direction::W => bb >> 1,
-		direction::WW => bb >> 2,
-		direction::NE => bb << 9,
-		direction::NW => bb << 7,
-		direction::SE => bb >> 7,
-		direction::SW => bb >> 9,
-		direction::NWW => bb << 6,
-		direction::NNW => bb << 15,
-		direction::NNE => bb << 17,
-		direction::NEE => bb << 10,
-		direction::SEE => bb >> 6,
-		direction::SSE => bb >> 15,
-		direction::SSW => bb >> 17,
-		direction::SWW => bb >> 10,
-		_ => 0,
-	}
-}
-
 pub const NUM_PIECES: usize = 6;
 pub const PIECES: [Piece; 6] = [
 	Piece::Pawn,
@@ -106,6 +80,7 @@ pub const PIECES: [Piece; 6] = [
 ];
 
 pub const NUM_COLORS: usize = 2;
+#[allow(unused)]
 pub const COLORS: [Color; 2] = [Color::White, Color::Black];
 
 pub const WHITE: u8 = 0;
@@ -228,6 +203,8 @@ impl Display for Square {
 		write!(f, "{}{}", FILES[file as usize], RANKS[rank as usize])
 	}
 }
+
+#[allow(unused)]
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Bitboard(pub u64);
@@ -249,6 +226,7 @@ impl Display for Bitboard {
 	}
 }
 
+#[allow(unused)]
 pub fn pop_lsb(bb: &mut u64) -> u64 {
 	let lsb = *bb & bb.wrapping_neg();
 	*bb &= *bb - 1;
@@ -259,6 +237,7 @@ pub fn clear_lsb(bb: &mut u64) {
 	*bb &= *bb - 1;
 }
 
+#[allow(unused)]
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Squares {

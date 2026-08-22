@@ -1,8 +1,7 @@
 use crate::board::{
 	Board,
-	eval::MATERIAL_WEIGHTS,
-	movegen::{MAX_MOVE_LIST_SIZE, Move, MoveFlag, MoveList},
-	utils::{BLACK, Color, NUM_PIECES, Piece, WHITE},
+	movegen::{MAX_MOVE_LIST_SIZE, Move, MoveList},
+	utils::{NUM_PIECES, Piece},
 };
 
 // King penalty since we are scoring pseudo-legal moves
@@ -118,7 +117,7 @@ impl StagedMoveList {
 		capture_history: &[[[i16; 64]; 6]; 6],
 		killers: Option<&[Move; 2]>,
 	) -> i32 {
-		let (from, to, flags) = m.unpack();
+		let (from, to, _) = m.unpack();
 		if m.is_promotion() {
 			return 10000000;
 		}

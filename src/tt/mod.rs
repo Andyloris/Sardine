@@ -1,8 +1,4 @@
-use crate::board::{
-	Board,
-	movegen::Move,
-	utils::{BLACK, Color, WHITE},
-};
+use crate::board::{Board, movegen::Move};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -54,6 +50,7 @@ const fn u32_to_u16_fermat_residue(h: u32) -> u16 {
 	(h as u16).wrapping_sub((h >> 16) as u16)
 }
 
+#[allow(unused)]
 const fn u64_to_u16_fermat_residue(h: u64) -> u16 {
 	u32_to_u16_fermat_residue(u64_to_u32_fermat_residue(h))
 }

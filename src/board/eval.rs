@@ -2,7 +2,7 @@ use crate::board::{
 	Board,
 	attacks::{get_king_attacks, get_knight_attacks, get_pawn_attacks, get_sliding_attacks},
 	movegen::{Move, MoveFlag},
-	utils::{BLACK, Color, NUM_PIECES, PIECES, Piece, PieceColorPair, WHITE, clear_lsb},
+	utils::{BLACK, Color, NUM_PIECES, PIECES, Piece, WHITE, clear_lsb},
 };
 
 const MG_MATERIAL_WEIGHTS: [i16; NUM_PIECES] = [82, 337, 365, 477, 1025, 0];
@@ -230,8 +230,6 @@ impl Board {
 
 	const TEMPO_BONUS: i32 = 13;
 	const BISHOP_PAIR_BONUS: i32 = 30;
-	const MG_CASTLING_RIGHTS_MALUS: i32 = -60;
-	const EG_CASTLING_RIGHTS_MALUS: i32 = -10;
 
 	const fn exponential_interpolator_a(b: f64) -> f64 {
 		let max_phase = Self::MAX_GAMEPHASE as f64;
@@ -253,6 +251,7 @@ impl Board {
 			.min(255.0f64) as i32
 	}
 
+	#[allow(unused)]
 	pub const EXPONENTIAL_GAMEPHASE_TRANSFORM: [i32; Self::MAX_GAMEPHASE as usize + 1] = {
 		let mut table = [0; _];
 		let mut i = 0;
@@ -270,8 +269,6 @@ impl Board {
 	pub fn eval_objective<const C: u8>(&self) -> i16 {
 		let mg_weight = self.gamephase.min(Self::MAX_GAMEPHASE as u8) as i32;
 		let eg_weight = Self::MAX_GAMEPHASE - mg_weight;
-		let exponential_mg_weight = Self::EXPONENTIAL_GAMEPHASE_TRANSFORM[mg_weight as usize];
-		let exponential_eg_weight = Self::MAX_GAMEPHASE - exponential_mg_weight;
 
 		let wbishop_pair = if self.num_bishops[WHITE as usize] > 1 {
 			Self::BISHOP_PAIR_BONUS

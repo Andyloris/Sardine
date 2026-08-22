@@ -99,7 +99,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 			} {
 				None
 			} else {
-				let (from, to, flags) = m.unpack();
+				let (from, to, _) = m.unpack();
 				Some((from, to, *m))
 			}
 		})
@@ -185,6 +185,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 	}
 }
 
+#[allow(unused)]
 fn test_against_shakmaty(fen: &str, max_depth: usize) {
 	// Get perft numbers between me and shakmaty at each depth
 	let mut board = Board::from_fen(fen).expect("I failed to parse the FEN");

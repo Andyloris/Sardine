@@ -57,7 +57,7 @@ impl UCIInstance {
 		);
 	}
 
-	fn from_lan(&self, lan: String) -> Option<Move> {
+	fn move_from_lan(&self, lan: String) -> Option<Move> {
 		let mut chars = lan.as_str().chars();
 		let file1_char: char = chars.nth(0)?;
 		let rank1_char: char = chars.nth(0)?;
@@ -110,10 +110,10 @@ impl UCIInstance {
 		match self.position.get_turn() {
 			Color::White => self
 				.position
-				.do_move::<WHITE, BLACK>(&self.from_lan(chess_move)?),
+				.do_move::<WHITE, BLACK>(&self.move_from_lan(chess_move)?),
 			Color::Black => self
 				.position
-				.do_move::<BLACK, WHITE>(&self.from_lan(chess_move)?),
+				.do_move::<BLACK, WHITE>(&self.move_from_lan(chess_move)?),
 		};
 		Some(())
 	}

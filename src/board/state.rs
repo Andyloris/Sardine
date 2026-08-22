@@ -16,12 +16,6 @@ pub struct UndoInfo {
 	queen_castle_flags: [bool; 2],
 }
 
-impl UndoInfo {
-	pub fn get_victim(&self) -> Option<Piece> {
-		self.victim
-	}
-}
-
 impl Board {
 	pub fn do_null_move(&mut self) -> UndoInfo {
 		let undo_info = UndoInfo {

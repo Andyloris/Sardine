@@ -9,8 +9,8 @@ use crate::board::{
 	in_between::{in_between_mask, line_bb_mask},
 	quiets::{get_pawns_able_to_double_push, get_pawns_able_to_push},
 	utils::{
-		BLACK, Bitboard, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_1, RANK_2,
-		RANK_7, RANK_8, Square, Squares, WHITE, clear_lsb,
+		BLACK, Color, KING_CASTLE_MASKS, Piece, QUEEN_CASTLE_MASKS, RANK_1, RANK_2, RANK_7, RANK_8,
+		Square, Squares, WHITE, clear_lsb,
 		direction::{self, N, S},
 		shift_bb,
 	},
@@ -76,14 +76,6 @@ impl Move {
 		)
 	}
 
-	pub fn get_from(self) -> u8 {
-		self.0 as u8 & 0x3F
-	}
-
-	pub fn get_to(self) -> u8 {
-		(self.0 >> 6) as u8 & 0x3F
-	}
-
 	pub fn get_flags(self) -> MoveFlag {
 		MoveFlag::from((self.0 >> 12) as u8 & 0xF)
 	}
@@ -114,10 +106,6 @@ impl Move {
 				| MoveFlag::RookPromoCapture
 				| MoveFlag::QueenPromoCapture
 		)
-	}
-
-	pub unsafe fn from_u16_unchecked(inner: u16) -> Self {
-		Self(inner)
 	}
 }
 
@@ -167,10 +155,6 @@ impl MoveList {
 		self.1 += 1;
 	}
 
-	pub const fn clear(&mut self) {
-		self.1 = 0;
-	}
-
 	pub fn iter(&self) -> Iter<'_, Move> {
 		self.0[0..self.1].iter()
 	}
@@ -186,12 +170,6 @@ impl MoveList {
 	pub const fn len(&self) -> usize {
 		self.1
 	}
-}
-
-pub mod move_gen_stages {
-	pub const CAPTURES: u8 = 1;
-	pub const QUIETS: u8 = 2;
-	pub const ALL: u8 = 3;
 }
 
 mod serialization_flags {
@@ -315,6 +293,7 @@ impl Board {
 		false
 	}
 
+	#[allow(unused)]
 	pub fn is_in_check<const KING_C: u8, const OPP: u8>(&self) -> bool {
 		let king_sq = self.pieces[KING_C as usize][Piece::King as usize].trailing_zeros() as u8;
 		self.is_square_attacked::<OPP, KING_C>(king_sq)
@@ -1263,18 +1242,6 @@ impl Board {
 			Self::serialize_with_to_bb(from, rook_attack_targets, MoveFlag::Captures, buf);
 			Self::serialize_with_to_bb(from, rook_targets, MoveFlag::Quiet, buf);
 		}
-	}
-
-	pub fn gen_pseudo_legal_moves<const S: u8, const C: u8, const OPP: u8>(
-		&self,
-		buf: &mut MoveList,
-	) {
-		match S {
-			move_gen_stages::CAPTURES => self.gen_pseudo_legal_captures::<C, OPP>(buf),
-			move_gen_stages::QUIETS => self.gen_pseudo_legal_quiets::<C, OPP>(buf),
-			move_gen_stages::ALL => self.gen_all_pseudo_legal_moves::<C, OPP>(buf),
-			_ => {}
-		};
 	}
 
 	pub fn gen_all_pseudo_legal_moves_no_context(&self, buf: &mut MoveList) {

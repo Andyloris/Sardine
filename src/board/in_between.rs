@@ -14,7 +14,7 @@ const fn calc_in_between(sq1: u8, sq2: u8) -> u64 {
 	line += 2 * (((rank & 7).wrapping_sub(1)) >> 58); /* b1g1 if same rank */
 	line += (((rank.wrapping_sub(file)) & 15).wrapping_sub(1)) & B2G7; /* b2g7 if same diagonal */
 	line += (((rank.wrapping_add(file)) & 15).wrapping_sub(1)) & H1B7; /* h1b7 if same antidiag */
-	line = line.wrapping_mul(btwn & btwn.wrapping_neg()); /* mul acts like shift by smaller square */
+	line = line.wrapping_mul(btwn.isolate_lowest_one()); /* mul acts like shift by smaller square */
 	line & btwn
 }
 

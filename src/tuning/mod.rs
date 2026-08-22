@@ -20,6 +20,7 @@ impl TuneParam {
 		}
 	}
 
+	#[allow(unused)]
 	pub fn get(&self) -> f64 {
 		unsafe { *self.value }
 	}
