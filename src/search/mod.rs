@@ -27,6 +27,7 @@ struct StackElem {
 	pub history_draw: bool,
 	pub static_eval: i16,
 	pub excluded: Move,
+	pub m: Move,
 }
 
 pub struct SupraContextualInfo {
@@ -389,7 +390,9 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			if !self.board.is_legal::<C, OPP>(&m) {
+			if ordered_move_list.stage() != MoveListStages::HashMove
+				&& !self.board.is_legal::<C, OPP>(&m)
+			{
 				continue;
 			}
 
@@ -429,7 +432,16 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			//for m in move_list.iter() {
+			self.stack[ply_from_root as usize].m = m;
 			let undo_info = self.board.do_move::<C, OPP>(&m).unwrap();
+
+			if ordered_move_list.stage() == MoveListStages::HashMove {
+				// Legality check for hash move due to collision risks
+				if self.board.is_in_check::<C, OPP>() {
+					self.board.undo_move::<C, OPP>(undo_info, &m).unwrap();
+					continue;
+				}
+			}
 
 			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
 			self.stack[ply_from_root as usize + 1].checkers_mask = checkers_mask;
@@ -769,20 +781,23 @@ impl<'a> SearchCtx<'a> {
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
+		while let Some(&m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
 			Some(&self.info.history),
 			&self.info.capture_history,
 			None,
 		) {
-			if !self.board.is_legal::<C, OPP>(m) {
+			self.stack[0].m = m;
+			if ordered_move_list.stage() != MoveListStages::HashMove
+				&& !self.board.is_legal::<C, OPP>(&m)
+			{
 				continue;
 			}
 			//for m in move_list.iter() {
 
 			// Avoids playing illegal moves when running out of time
 			if best_move == Move::default() {
-				best_move = *m;
+				best_move = m;
 			}
 
 			self.check_counter += 1;
@@ -798,7 +813,14 @@ impl<'a> SearchCtx<'a> {
 				break;
 			}
 
-			let undo_info = self.board.do_move::<C, OPP>(m)?;
+			let undo_info = self.board.do_move::<C, OPP>(&m)?;
+			if ordered_move_list.stage() == MoveListStages::HashMove {
+				// Legality check for hash move due to collision risks
+				if self.board.is_in_check::<C, OPP>() {
+					self.board.undo_move::<C, OPP>(undo_info, &m).unwrap();
+					continue;
+				}
+			}
 
 			let checkers_mask = self.board.get_checkers_mask::<OPP, C>();
 			self.stack[1].checkers_mask = checkers_mask;
@@ -833,12 +855,12 @@ impl<'a> SearchCtx<'a> {
 
 			num_legal_moves += 1;
 
-			self.board.undo_move::<C, OPP>(undo_info, m)?;
+			self.board.undo_move::<C, OPP>(undo_info, &m)?;
 
 			if score > best_value {
-				best_move = *m;
+				best_move = m;
 				best_value = score;
-				self.pv_array[0] = *m;
+				self.pv_array[0] = m;
 				for i in 0..(256 - 1) {
 					let src = self.pv_array[pv_next_index + i];
 					self.pv_array[i + 1] = src;

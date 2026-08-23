@@ -22,7 +22,7 @@ impl From<u8> for ScoreType {
 
 #[derive(Default, Clone, Debug)]
 pub struct TTEntry {
-	pub hash: u32,
+	pub hash: u16,
 	pub score: i16,
 	flags: u8,
 	pub best_move: Move,
@@ -79,10 +79,11 @@ impl TT {
 		let idx = board.get_hash() % (1 << self.size_exponent);
 		let entry = &mut self.table[idx as usize];
 		let generation = (board.get_halfmove_clock() & 0x3F) as u8;
-		let hash = u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1));
+		let hash = u64_to_u16_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1));
 		if score_type == ScoreType::Exact
 			|| depth >= entry.depth
 			|| ((generation << 2).wrapping_sub(entry.get_generation() << 2)) != 0
+			|| entry.hash != hash
 		{
 			*entry = TTEntry {
 				hash,
@@ -99,7 +100,7 @@ impl TT {
 	pub fn probe<const C: u8, const OPP: u8>(&self, board: &Board) -> Option<&TTEntry> {
 		let idx = board.get_hash() % (1 << self.size_exponent as u64);
 		let entry = &self.table[idx as usize];
-		if u64_to_u32_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1))
+		if u64_to_u16_fermat_residue(board.get_hash() & !((1 << self.size_exponent) - 1))
 			== entry.hash
 			&& board.is_pseudo_legal::<C, OPP>(&entry.best_move)
 		{

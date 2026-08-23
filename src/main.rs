@@ -189,6 +189,7 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 fn test_against_shakmaty(fen: &str, max_depth: usize) {
 	// Get perft numbers between me and shakmaty at each depth
 	let mut board = Board::from_fen(fen).expect("I failed to parse the FEN");
+	println!("{:#?}", board);
 	let shakmaty_pos: Chess = {
 		let fen: Fen = fen.parse().unwrap();
 		fen.into_position(shakmaty::CastlingMode::Standard).unwrap()
@@ -218,10 +219,7 @@ fn main() {
 	println!("{}", movebuf.len());*/
 	//	println!("Perft: {}", perft(&board, 2));
 	//perft(&board, 3);
-	/*test_against_shakmaty(
-		"rn1qk2r/p1pp1ppp/bp2p3/4P3/1b1PP3/8/PPP1K1PP/RNBQ1BNR w kq - 1 2",
-		5,
-	);*/
+	//test_against_shakmaty("8/8/3P4/2K5/5p2/8/8/1Q4k1 b - - 11 29", 5);
 
 	let params = std::env::args().collect::<Vec<String>>();
 

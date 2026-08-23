@@ -1244,17 +1244,21 @@ impl Board {
 		}
 	}
 
-	pub fn gen_all_pseudo_legal_moves_no_context(&self, buf: &mut MoveList) {
+	pub fn gen_all_pseudo_legal_moves_no_context(&self, buf: &mut MoveList) -> u64 {
+		let checkers_mask;
 		match self.turn {
 			Color::White => {
-				let checkers_mask = self.get_checkers_mask::<WHITE, BLACK>();
+				checkers_mask = self.get_checkers_mask::<WHITE, BLACK>();
 				self.gen_all_pseudo_legal_moves_in_check::<WHITE, BLACK>(buf, checkers_mask)
 			}
+
 			Color::Black => {
-				let checkers_mask = self.get_checkers_mask::<BLACK, WHITE>();
+				checkers_mask = self.get_checkers_mask::<BLACK, WHITE>();
 				self.gen_all_pseudo_legal_moves_in_check::<BLACK, WHITE>(buf, checkers_mask)
 			}
-		}
+		};
+
+		checkers_mask
 	}
 
 	pub fn is_pseudo_legal<const C: u8, const OPP: u8>(&self, m: &Move) -> bool {

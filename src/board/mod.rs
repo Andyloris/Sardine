@@ -17,7 +17,7 @@ use crate::board::{
 	zobrist::ZobristDelta,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PieceList {
 	pieces: [u8; 64],
 }
@@ -62,7 +62,7 @@ impl PieceList {
 	}
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Board {
 	pieces: [[u64; NUM_PIECES]; NUM_COLORS],
 	pieces_by_color: [u64; NUM_COLORS],

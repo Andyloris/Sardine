@@ -18,7 +18,7 @@ pub struct UCIInstance {
 impl UCIInstance {
 	pub fn new() -> Self {
 		Self {
-			info: SupraContextualInfo::new(TT::new(23)),
+			info: SupraContextualInfo::new(TT::new(24)),
 			position: Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 				.unwrap(),
 		}
@@ -48,6 +48,7 @@ impl UCIInstance {
 
 	fn eval(&self) {
 		println!("{}", self.position);
+		println!("Hash: {:#06x}", self.position.get_hash());
 		println!(
 			"{}",
 			match self.position.get_turn() {
