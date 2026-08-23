@@ -24,6 +24,7 @@ impl From<u8> for ScoreType {
 pub struct TTEntry {
 	pub hash: u16,
 	pub score: i16,
+	pub static_eval: i16,
 	flags: u8,
 	pub best_move: Move,
 	pub depth: u8,
@@ -74,6 +75,7 @@ impl TT {
 		best_move: Move,
 		depth: u8,
 		score: i16,
+		static_eval: i16,
 		score_type: ScoreType,
 	) {
 		let idx = board.get_hash() % (1 << self.size_exponent);
@@ -90,6 +92,7 @@ impl TT {
 				best_move,
 				depth,
 				score,
+				static_eval,
 				flags: (score_type as u8) | generation << 2,
 			};
 		} else if entry.depth >= 5 {

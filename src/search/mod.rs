@@ -245,7 +245,17 @@ impl<'a> SearchCtx<'a> {
 
 		self.nodes += 1;
 
-		let entry = self.info.tt.probe::<C, OPP>(&self.board).cloned();
+		let is_in_check = self.stack[ply_from_root as usize].checkers_mask != 0;
+		let mut entry = self.info.tt.probe::<C, OPP>(&self.board).cloned();
+		if let Some(ref tt_entry) = entry {
+			// We never evaluate in check. This can be used to verify against hash collisions
+			if (is_in_check && (tt_entry.static_eval as i32 != -IMMEDIATE_MATE_SCORE - 1))
+				|| (!is_in_check && (tt_entry.static_eval as i32 == -IMMEDIATE_MATE_SCORE - 1))
+			{
+				entry = None;
+			}
+		}
+
 		if let Some(ref entry) = entry
 			&& self.stack[ply_from_root as usize].excluded == Move::default()
 			&& entry.depth >= depth
@@ -261,25 +271,27 @@ impl<'a> SearchCtx<'a> {
 			};
 		}
 
-		let is_in_check = self.stack[ply_from_root as usize].checkers_mask != 0;
-
 		if depth == 0 {
 			return self.quiescence_search::<C, OPP>(ply_from_root, alpha, beta);
 		}
 
-		let hash_move = entry.as_ref().map(|e| e.best_move);
-
-		let static_eval = if !is_in_check {
-			self.board.eval_objective::<C>() as i32
-				* match C {
-					WHITE => 1,
-					BLACK => -1,
-					_ => 0,
+		let static_eval: i32 = entry
+			.as_ref()
+			.map(|v| v.static_eval as i32)
+			.unwrap_or_else(|| {
+				if !is_in_check {
+					self.board.eval_objective::<C>() as i32
+						* match C {
+							WHITE => 1,
+							BLACK => -1,
+							_ => 0,
+						}
+				} else {
+					-IMMEDIATE_MATE_SCORE - 1
 				}
-		} else {
-			// Do not evaluate in check
-			-IMMEDIATE_MATE_SCORE - 1
-		};
+			});
+
+		let hash_move = entry.as_ref().map(|e| e.best_move);
 
 		self.stack[ply_from_root as usize].static_eval = static_eval as i16;
 
@@ -671,6 +683,7 @@ impl<'a> SearchCtx<'a> {
 					best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
 					ply_from_root,
 				),
+				static_eval as i16,
 				tt_score_type,
 			);
 		}
@@ -734,8 +747,19 @@ impl<'a> SearchCtx<'a> {
 		let alpha_orig = alpha;
 		let beta_orig = beta;
 
-		let entry = self.info.tt.probe::<C, OPP>(&self.board);
-		if let Some(entry) = entry
+		self.stack[0].checkers_mask = self.board.get_checkers_mask::<C, OPP>();
+		let is_in_check = self.stack[0].checkers_mask != 0;
+		let mut entry = self.info.tt.probe::<C, OPP>(&self.board).cloned();
+		if let Some(ref tt_entry) = entry {
+			// We never evaluate in check. This can be used to verify against hash collisions
+			if (is_in_check && (tt_entry.static_eval as i32 != -IMMEDIATE_MATE_SCORE - 1))
+				|| (!is_in_check && (tt_entry.static_eval as i32 == -IMMEDIATE_MATE_SCORE - 1))
+			{
+				entry = None;
+			}
+		}
+
+		if let Some(ref entry) = entry
 			&& entry.depth >= depth
 			&& depth == 0
 			&& entry.score as i32 <= alpha
@@ -754,20 +778,24 @@ impl<'a> SearchCtx<'a> {
 				_ => {}
 			};
 		}
-		let hash_move = entry.map(|e| e.best_move);
-		self.stack[0].checkers_mask = self.board.get_checkers_mask::<C, OPP>();
-		let is_in_check = self.stack[0].checkers_mask != 0;
 
-		let static_eval = if !is_in_check {
-			self.board.eval_objective::<C>() as i32
-				* match C {
-					WHITE => 1,
-					BLACK => -1,
-					_ => 0,
+		let hash_move = entry.as_ref().map(|e| e.best_move);
+
+		let static_eval: i32 = entry
+			.as_ref()
+			.map(|v| v.static_eval as i32)
+			.unwrap_or_else(|| {
+				if !is_in_check {
+					self.board.eval_objective::<C>() as i32
+						* match C {
+							WHITE => 1,
+							BLACK => -1,
+							_ => 0,
+						}
+				} else {
+					-IMMEDIATE_MATE_SCORE - 1
 				}
-		} else {
-			-IMMEDIATE_MATE_SCORE - 1
-		};
+			});
 
 		self.stack[0].static_eval = static_eval as i16;
 
@@ -894,6 +922,7 @@ impl<'a> SearchCtx<'a> {
 				depth,
 				// This clamp is here just in case
 				best_value.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+				static_eval as i16,
 				tt_score_type,
 			);
 		}
