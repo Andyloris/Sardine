@@ -72,8 +72,7 @@ pub struct Board {
 	occupied: u64,
 
 	en_passant: Option<NonZero<u8>>,
-	king_castle_flags: [bool; 2],
-	queen_castle_flags: [bool; 2],
+	castle_rights: u8,
 	turn: Color,
 	halfmove_clock: usize,
 
@@ -91,6 +90,14 @@ pub struct Board {
 }
 
 impl Board {
+	pub(crate) const WKING_CASTLE: u8 = 1;
+	pub(crate) const BKING_CASTLE: u8 = 2;
+	pub(crate) const WQUEEN_CASTLE: u8 = 4;
+	pub(crate) const BQUEEN_CASTLE: u8 = 8;
+
+	pub(crate) const KING_CASTLE: [u8; 2] = [Self::WKING_CASTLE, Self::BKING_CASTLE];
+	pub(crate) const QUEEN_CASTLE: [u8; 2] = [Self::WQUEEN_CASTLE, Self::BQUEEN_CASTLE];
+
 	pub const fn get_turn(&self) -> Color {
 		self.turn
 	}
@@ -202,29 +209,26 @@ impl Board {
 			_ => return None,
 		};
 
-		let mut king_castle_flags: [bool; 2] = [false; 2];
-		let mut queen_castle_flags: [bool; 2] = [false; 2];
+		let mut castle_rights: u8 = 0;
 		for c in parts[2].chars() {
 			match c {
 				'K' => {
-					king_castle_flags[0] = true;
-					board.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::White));
+					castle_rights |= Self::WKING_CASTLE;
 				}
 				'Q' => {
-					queen_castle_flags[0] = true;
-					board.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::White));
+					castle_rights |= Self::WQUEEN_CASTLE;
 				}
 				'k' => {
-					king_castle_flags[1] = true;
-					board.apply_zobrist_delta(ZobristDelta::KCastleRights(Color::Black));
+					castle_rights |= Self::BKING_CASTLE;
 				}
 				'q' => {
-					queen_castle_flags[1] = true;
-					board.apply_zobrist_delta(ZobristDelta::QCastleRights(Color::Black));
+					castle_rights |= Self::BQUEEN_CASTLE;
 				}
 				_ => {}
 			}
 		}
+
+		board.apply_zobrist_delta(ZobristDelta::CastleRights(castle_rights));
 
 		let en_passant: Option<NonZero<u8>> = match parts[3] {
 			"-" => {
@@ -247,8 +251,7 @@ impl Board {
 		board.pieces = pieces;
 		board.turn = turn;
 		board.en_passant = en_passant;
-		board.king_castle_flags = king_castle_flags;
-		board.queen_castle_flags = queen_castle_flags;
+		board.castle_rights = castle_rights;
 		board.halfmove_clock = halfmove_clock;
 		board.hash_history = Vec::with_capacity(256);
 		board.hash_history.push(board.zobrist);

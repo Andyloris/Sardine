@@ -1,9 +1,6 @@
 // ToDo: Test zobrist hashes someday
 
-use crate::board::{
-	Board,
-	utils::{Color, PieceColorPair},
-};
+use crate::board::{Board, utils::PieceColorPair};
 
 const fn fast_hash(state: u64) -> u64 {
 	let mut h = state;
@@ -15,12 +12,11 @@ const fn fast_hash(state: u64) -> u64 {
 
 const PIECE_IDX_OFF: usize = 0;
 const SIDE_TO_MOVE_IDX: usize = 768;
-// ToDo: Pack castle rights into a 4 bit value so that we can simply use a 16 bit index into the
-// zobrist table
+// 16 castling entries for speed
 const CASTLE_RIGHTS_IDX_OFF: usize = 769;
 // 64 en passant entries for speed
-const EN_PASSANT_SQUARE_IDX_OFF: usize = 773;
-const NUM_ZOBRIST_ENTRIES: usize = 837;
+const EN_PASSANT_SQUARE_IDX_OFF: usize = 785;
+const NUM_ZOBRIST_ENTRIES: usize = 849;
 
 static ZOBRIST_TABLE: [u64; NUM_ZOBRIST_ENTRIES] = {
 	let mut table: [u64; NUM_ZOBRIST_ENTRIES] = [0; NUM_ZOBRIST_ENTRIES];
@@ -38,14 +34,46 @@ static ZOBRIST_TABLE: [u64; NUM_ZOBRIST_ENTRIES] = {
 		idx += 1;
 	}
 
+	// Special handling for castling flags
+	let wking_castle = fast_hash(state);
+	let wqueen_castle = fast_hash(state + 1);
+	let bking_castle = fast_hash(state + 2);
+	let bqueen_castle = fast_hash(state + 3);
+	idx = CASTLE_RIGHTS_IDX_OFF;
+	loop {
+		if idx >= EN_PASSANT_SQUARE_IDX_OFF {
+			break;
+		}
+
+		let rights = (idx - CASTLE_RIGHTS_IDX_OFF) as u8;
+		table[idx] = if rights & Board::WKING_CASTLE != 0 {
+			wking_castle
+		} else {
+			0
+		} ^ if rights & Board::BKING_CASTLE != 0 {
+			bking_castle
+		} else {
+			0
+		} ^ if rights & Board::WQUEEN_CASTLE != 0 {
+			wqueen_castle
+		} else {
+			0
+		} ^ if rights & Board::BQUEEN_CASTLE != 0 {
+			bqueen_castle
+		} else {
+			0
+		};
+
+		idx += 1;
+	}
+
 	table
 };
 
 pub enum ZobristDelta {
 	PutRemove(PieceColorPair, u8),
 	WhiteTurn,
-	KCastleRights(Color),
-	QCastleRights(Color),
+	CastleRights(u8),
 	EnPassantSquareChange(u8),
 }
 
@@ -55,8 +83,7 @@ fn get_zobrist_idx(delta: ZobristDelta) -> usize {
 			PIECE_IDX_OFF + (color as usize + sq as usize * 2 + piece as usize * 128)
 		}
 		ZobristDelta::WhiteTurn => SIDE_TO_MOVE_IDX,
-		ZobristDelta::KCastleRights(color) => CASTLE_RIGHTS_IDX_OFF + color as usize,
-		ZobristDelta::QCastleRights(color) => CASTLE_RIGHTS_IDX_OFF + 2 + color as usize,
+		ZobristDelta::CastleRights(rights) => CASTLE_RIGHTS_IDX_OFF + rights as usize,
 		ZobristDelta::EnPassantSquareChange(sq) => EN_PASSANT_SQUARE_IDX_OFF + sq as usize,
 	}
 }

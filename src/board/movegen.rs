@@ -498,7 +498,7 @@ impl Board {
 			Self::serialize_with_to_bb(from, king_targets, MoveFlag::Quiet, buf);
 		}
 
-		if self.king_castle_flags[C as usize] {
+		if self.castle_rights & Self::KING_CASTLE[C as usize] != 0 {
 			let rook_sq = match C {
 				WHITE => Squares::F1 as u8,
 				BLACK => Squares::F8 as u8,
@@ -525,7 +525,7 @@ impl Board {
 			}
 		}
 
-		if self.queen_castle_flags[C as usize] {
+		if self.castle_rights & Self::QUEEN_CASTLE[C as usize] != 0 {
 			let rook_sq = match C {
 				WHITE => Squares::D1 as u8,
 				BLACK => Squares::D8 as u8,
@@ -717,7 +717,7 @@ impl Board {
 			Self::serialize_with_to_bb(from, king_targets, MoveFlag::Quiet, buf);
 		}
 
-		if self.king_castle_flags[C as usize] {
+		if self.castle_rights & Self::KING_CASTLE[C as usize] != 0 {
 			let rook_sq = match C {
 				WHITE => Squares::F1 as u8,
 				BLACK => Squares::F8 as u8,
@@ -744,7 +744,7 @@ impl Board {
 			}
 		}
 
-		if self.queen_castle_flags[C as usize] {
+		if self.castle_rights & Self::QUEEN_CASTLE[C as usize] != 0 {
 			let rook_sq = match C {
 				WHITE => Squares::D1 as u8,
 				BLACK => Squares::D8 as u8,
@@ -1317,7 +1317,7 @@ impl Board {
 
 				let rook_mask = 1u64 << rook_square;
 
-				self.king_castle_flags[C as usize]
+				self.castle_rights & Self::KING_CASTLE[C as usize] != 0
 					&& (from_piece == Piece::King)
 					&& (from == king_square)
 					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
@@ -1334,7 +1334,7 @@ impl Board {
 
 				let rook_mask = 1u64 << rook_square;
 
-				self.queen_castle_flags[C as usize]
+				self.castle_rights & Self::QUEEN_CASTLE[C as usize] != 0
 					&& (from_piece == Piece::King)
 					&& (from == king_square)
 					&& (self.pieces[C as usize][Piece::Rook as usize] & rook_mask) != 0
