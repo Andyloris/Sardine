@@ -6,9 +6,9 @@ use crate::{
 	board::{
 		Board,
 		movegen::{Move, MoveList},
-		utils::{BLACK, Color, Piece, WHITE},
+		utils::{BLACK, Color, WHITE},
 	},
-	search::move_ordering::{MoveListStages, StagedMoveList},
+	search::move_ordering::{History, MoveListStages, StagedMoveList},
 	tt::{ScoreType, TT},
 };
 
@@ -21,7 +21,7 @@ mod node_types {
 	pub const PV: u8 = 2;
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default)]
 struct StackElem {
 	pub checkers_mask: u64,
 	pub history_draw: bool,
@@ -32,16 +32,14 @@ struct StackElem {
 
 pub struct SupraContextualInfo {
 	tt: TT,
-	history: [[[i16; 64]; 64]; 2],
-	capture_history: [[[i16; 64]; 6]; 6],
+	history: History,
 }
 
 impl SupraContextualInfo {
 	pub fn new(tt: TT) -> Self {
 		Self {
 			tt,
-			history: [[[0; 64]; 64]; 2],
-			capture_history: [[[0; 64]; 6]; 6],
+			history: History::default(),
 		}
 	}
 }
@@ -87,7 +85,7 @@ impl<'a> SearchCtx<'a> {
 
 	fn tt_score_to_search_score(score: i16, ply_from_root: u8) -> i16 {
 		if Self::is_mating_value(score as i32) {
-			(score.abs() - ply_from_root as i16) * score.signum()
+			(score.abs().saturating_sub(ply_from_root as i16)) * score.signum()
 		} else {
 			score
 		}
@@ -95,7 +93,7 @@ impl<'a> SearchCtx<'a> {
 
 	fn search_score_to_tt_score(score: i16, ply_from_root: u8) -> i16 {
 		if Self::is_mating_value(score as i32) {
-			(score.abs() + ply_from_root as i16) * score.signum()
+			(score.abs().saturating_add(ply_from_root as i16)) * score.signum()
 		} else {
 			score
 		}
@@ -165,10 +163,10 @@ impl<'a> SearchCtx<'a> {
 		let mut num_legal_moves = 0;
 		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
-			Some(&self.info.history),
-			&self.info.capture_history,
+			&self.info.history,
 			Some(&self.killers[ply_from_root as usize]),
 		) {
+			self.stack[ply_from_root as usize].m = *m;
 			if !self.board.see_ge::<C, OPP>(*m, -100) {
 				continue;
 			}
@@ -340,6 +338,7 @@ impl<'a> SearchCtx<'a> {
 			{
 				let r = 3 + depth as i32 / 3 + improving as i32 + ((static_eval - beta) / 128);
 				self.stack[ply_from_root as usize + 1].checkers_mask = 0;
+				self.stack[ply_from_root as usize].m = Move::default();
 				let undo_info = self.board.do_null_move();
 				let score = -self.negamax::<{ node_types::CUT }, { OPP }, { C }>(
 					depth.saturating_sub(r.min(255) as u8),
@@ -390,8 +389,7 @@ impl<'a> SearchCtx<'a> {
 		while let Some(m) = ordered_move_list
 			.pick_move::<C, OPP>(
 				&self.board,
-				Some(&self.info.history),
-				&self.info.capture_history,
+				&self.info.history,
 				Some(&self.killers[ply_from_root as usize]),
 			)
 			.copied()
@@ -613,38 +611,22 @@ impl<'a> SearchCtx<'a> {
 					self.killers[ply_from_root as usize][0] = m;
 
 					for quiet in searched_quiets.iter() {
-						let (from, to, _) = quiet.unpack();
-						move_ordering::update_history::<C>(&mut self.info.history, from, to, -bonus)
+						self.info
+							.history
+							.update::<C, OPP>(&self.board, quiet, -bonus);
 					}
 
-					let (from, to, _) = m.unpack();
-					move_ordering::update_history::<C>(&mut self.info.history, from, to, bonus)
+					self.info.history.update::<C, OPP>(&self.board, &m, bonus);
 				} else if !m.is_quiet() && !m.is_promotion() {
 					let bonus = (168 * depth as i16 - 100).min(1718);
-					let (from, to, _) = m.unpack();
-					move_ordering::update_capture_history(
-						&mut self.info.capture_history,
-						self.board.get_piece_at_square::<C>(from)?,
-						self.board
-							.get_piece_at_square::<OPP>(to)
-							.unwrap_or(Piece::Pawn),
-						to,
-						bonus,
-					);
+					self.info.history.update::<C, OPP>(&self.board, &m, bonus);
 				}
 
 				let malus = (768 * depth as i16 - 257).min(2357);
 				for capture in searched_captures.iter() {
-					let (from, to, _) = capture.unpack();
-					move_ordering::update_capture_history(
-						&mut self.info.capture_history,
-						self.board.get_piece_at_square::<C>(from)?,
-						self.board
-							.get_piece_at_square::<OPP>(to)
-							.unwrap_or(Piece::Pawn),
-						to,
-						-malus,
-					);
+					self.info
+						.history
+						.update::<C, OPP>(&self.board, capture, -malus);
 				}
 
 				break; // Beta-cutoff
@@ -809,12 +791,9 @@ impl<'a> SearchCtx<'a> {
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
-		while let Some(&m) = ordered_move_list.pick_move::<C, OPP>(
-			&self.board,
-			Some(&self.info.history),
-			&self.info.capture_history,
-			None,
-		) {
+		while let Some(&m) =
+			ordered_move_list.pick_move::<C, OPP>(&self.board, &self.info.history, None)
+		{
 			self.stack[0].m = m;
 			if ordered_move_list.stage() != MoveListStages::HashMove
 				&& !self.board.is_legal::<C, OPP>(&m)
@@ -974,24 +953,8 @@ impl<'a> SearchCtx<'a> {
 		self.nodes = 0;
 		self.seldepth = 0;
 
-		// Age history values between iterations to avoid staleness
-		for i in 0..64 {
-			for j in 0..64 {
-				self.info.history[WHITE as usize][i][j] =
-					(self.info.history[WHITE as usize][i][j] * 3) / 4;
-				self.info.history[BLACK as usize][i][j] =
-					(self.info.history[BLACK as usize][i][j] * 3) / 4;
-			}
-		}
-
-		for i in 0..6 {
-			for j in 0..6 {
-				for k in 0..64 {
-					self.info.capture_history[i][j][k] =
-						(self.info.capture_history[i][j][k] * 3) / 4;
-				}
-			}
-		}
+		// Age history values between searches to avoid staleness
+		self.info.history.age();
 
 		let mut best_info = match self.board.get_turn() {
 			Color::White => self.bestmove::<WHITE, BLACK>(

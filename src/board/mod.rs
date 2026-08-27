@@ -24,7 +24,9 @@ struct PieceList {
 
 impl Default for PieceList {
 	fn default() -> Self {
-		Self { pieces: [0xFF; 64] }
+		Self {
+			pieces: [Self::SENTINEL; 64],
+		}
 	}
 }
 
