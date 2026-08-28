@@ -1393,7 +1393,7 @@ impl Board {
 		}
 	}
 
-	fn get_slider_blockers<const C: u8, const OPP: u8>(&self, excluded: u64) -> u64 {
+	pub fn get_slider_blockers<const C: u8, const OPP: u8>(&self, excluded: u64) -> u64 {
 		let king_sq = self.pieces[C as usize][Piece::King as usize].trailing_zeros() as u8;
 		let rooks_queens = self.pieces[OPP as usize][Piece::Rook as usize]
 			| self.pieces[OPP as usize][Piece::Queen as usize];
@@ -1417,20 +1417,8 @@ impl Board {
 		blockers
 	}
 
-	pub fn is_legal<const C: u8, const OPP: u8>(&self, m: &Move) -> bool {
+	pub fn is_legal<const C: u8, const OPP: u8>(&self, m: &Move, blockers: u64) -> bool {
 		let (from, to, flags) = m.unpack();
-
-		let excluded = if flags == MoveFlag::EpCaptures {
-			let en_passant_victim = to.saturating_add_signed(match C {
-				WHITE => S,
-				BLACK => N,
-				_ => 0,
-			});
-
-			1u64 << en_passant_victim
-		} else {
-			0
-		};
 
 		let from_piece = self.get_piece_at_square::<C>(from).unwrap();
 		if from_piece == Piece::King {
@@ -1438,7 +1426,17 @@ impl Board {
 			return self.attacks_to_square_with_occ::<OPP, C>(to, &occ) == 0;
 		}
 
-		let blockers = self.get_slider_blockers::<C, OPP>(excluded);
+		let blockers = if flags == MoveFlag::EpCaptures {
+			let en_passant_victim = to.saturating_add_signed(match C {
+				WHITE => S,
+				BLACK => N,
+				_ => 0,
+			});
+
+			self.get_slider_blockers::<C, OPP>(1u64 << en_passant_victim)
+		} else {
+			blockers
+		};
 		blockers & (1u64 << from) == 0
 			|| (line_bb_mask(from, to) & self.pieces[C as usize][Piece::King as usize] != 0)
 	}

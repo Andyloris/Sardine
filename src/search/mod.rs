@@ -160,6 +160,7 @@ impl<'a> SearchCtx<'a> {
 		let mut ordered_move_list =
 			StagedMoveList::new::<C, OPP>(None, &self.board, only_captures, checkers_mask);
 
+		let blockers = self.board.get_slider_blockers::<C, OPP>(0);
 		let mut num_legal_moves = 0;
 		while let Some(m) = ordered_move_list.pick_move::<C, OPP>(
 			&self.board,
@@ -171,7 +172,7 @@ impl<'a> SearchCtx<'a> {
 				continue;
 			}
 
-			if !self.board.is_legal::<C, OPP>(m) {
+			if !self.board.is_legal::<C, OPP>(m, blockers) {
 				continue;
 			}
 			num_legal_moves += 1;
@@ -372,6 +373,7 @@ impl<'a> SearchCtx<'a> {
 			depth -= 1;
 		}
 
+		let blockers = self.board.get_slider_blockers::<C, OPP>(0);
 		let mut ordered_move_list = StagedMoveList::new::<C, OPP>(
 			hash_move,
 			&self.board,
@@ -401,7 +403,7 @@ impl<'a> SearchCtx<'a> {
 			}
 
 			if ordered_move_list.stage() != MoveListStages::HashMove
-				&& !self.board.is_legal::<C, OPP>(&m)
+				&& !self.board.is_legal::<C, OPP>(&m, blockers)
 			{
 				continue;
 			}
@@ -788,6 +790,7 @@ impl<'a> SearchCtx<'a> {
 			self.stack[0].checkers_mask,
 		);
 
+		let blockers = self.board.get_slider_blockers::<C, OPP>(0);
 		let mut best_value = -IMMEDIATE_MATE_SCORE - 1;
 		let mut num_legal_moves = 0;
 		let mut best_move = Move::default();
@@ -796,7 +799,7 @@ impl<'a> SearchCtx<'a> {
 		{
 			self.stack[0].m = m;
 			if ordered_move_list.stage() != MoveListStages::HashMove
-				&& !self.board.is_legal::<C, OPP>(&m)
+				&& !self.board.is_legal::<C, OPP>(&m, blockers)
 			{
 				continue;
 			}

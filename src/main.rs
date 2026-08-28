@@ -25,9 +25,10 @@ fn perft_driver<const C: u8, const OPP: u8>(brd: &mut Board, d: usize) -> u64 {
 
 	brd.gen_all_pseudo_legal_moves_no_context(&mut move_list);
 
+	let blockers = brd.get_slider_blockers::<C, OPP>(0);
 	let mut nodes = 0;
 	for m in move_list.iter() {
-		if !brd.is_legal::<C, OPP>(m) {
+		if !brd.is_legal::<C, OPP>(m, blockers) {
 			continue;
 		}
 
@@ -94,8 +95,15 @@ fn coupled_perft(shakmaty_pos: &Chess, brd: &Board, depth: usize, pv: &mut Vec<M
 		.iter()
 		.filter_map(|m| {
 			if match brd.get_turn() {
-				Color::White => !brd.is_legal::<WHITE, BLACK>(m),
-				Color::Black => !brd.is_legal::<BLACK, WHITE>(m),
+				Color::White => {
+					let blockers = brd.get_slider_blockers::<WHITE, BLACK>(0);
+					!brd.is_legal::<WHITE, BLACK>(m, blockers)
+				}
+
+				Color::Black => {
+					let blockers = brd.get_slider_blockers::<BLACK, WHITE>(0);
+					!brd.is_legal::<BLACK, WHITE>(m, blockers)
+				}
 			} {
 				None
 			} else {
