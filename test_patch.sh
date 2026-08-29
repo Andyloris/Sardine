@@ -4,11 +4,11 @@ BOOK="$1"
 
 mkdir -p test/
 RUSTFLAGS="-C target-cpu=native" cargo build --release
-cp target/release/final_sardine test/eng1
+cp target/release/sardine test/eng1
 
 git checkout HEAD^1
 RUSTFLAGS="-C target-cpu=native" cargo build --release
-cp target/release/final_sardine test/eng2
+cp target/release/sardine test/eng2
 
 git switch -
 fastchess -engine cmd=./test/eng1 name=NewSardine \
